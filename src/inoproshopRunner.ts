@@ -9,9 +9,31 @@ import {
 import { randomUUID } from "crypto";
 import { join } from "path";
 
+export type PatchOperation =
+  | "append"
+  | "prepend"
+  | "replace_exact"
+  | "insert_before"
+  | "insert_after"
+  | "replace_between_markers";
+
 export type InoProShopCommand =
   | {
       action: "diagnose_system";
+    }
+  | {
+      action: "open_project";
+      project_path: string;
+    }
+  | {
+      action: "create_project";
+      project_path: string;
+      overwrite?: boolean;
+    }
+  | {
+      action: "close_project";
+      project_path: string;
+      save_before_close?: boolean;
     }
   | {
       action: "get_project_info";
@@ -56,6 +78,163 @@ export type InoProShopCommand =
       backup_before_write?: boolean;
     }
   | {
+      action: "patch_declaration";
+      project_path: string;
+      object_name: string;
+      object_index?: number;
+      operation: PatchOperation;
+      text?: string;
+      search_text?: string;
+      replace_text?: string;
+      replace_all?: boolean;
+      anchor?: string;
+      start_marker?: string;
+      end_marker?: string;
+      create_if_missing?: boolean;
+      save_after?: boolean;
+      build_after?: boolean;
+      backup_before_write?: boolean;
+    }
+  | {
+      action: "patch_implementation";
+      project_path: string;
+      object_name: string;
+      object_index?: number;
+      operation: PatchOperation;
+      text?: string;
+      search_text?: string;
+      replace_text?: string;
+      replace_all?: boolean;
+      anchor?: string;
+      start_marker?: string;
+      end_marker?: string;
+      create_if_missing?: boolean;
+      save_after?: boolean;
+      build_after?: boolean;
+      backup_before_write?: boolean;
+    }
+  | {
+      action: "create_pou";
+      project_path: string;
+      parent_name?: string;
+      name: string;
+      pou_type: "program" | "function_block" | "function";
+      return_type?: string;
+      declaration?: string;
+      implementation?: string;
+      save_after?: boolean;
+      build_after?: boolean;
+      backup_before_create?: boolean;
+    }
+  | {
+      action: "create_gvl";
+      project_path: string;
+      parent_name?: string;
+      name: string;
+      declaration?: string;
+      save_after?: boolean;
+      build_after?: boolean;
+      backup_before_create?: boolean;
+    }
+
+  | {
+      action: "create_method";
+      project_path: string;
+      parent_name: string;
+      parent_index?: number;
+      name: string;
+      return_type?: string;
+      declaration?: string;
+      implementation?: string;
+      save_after?: boolean;
+      build_after?: boolean;
+      backup_before_create?: boolean;
+    }
+  | {
+      action: "create_property";
+      project_path: string;
+      parent_name: string;
+      parent_index?: number;
+      name: string;
+      property_type?: string;
+      declaration?: string;
+      implementation?: string;
+      save_after?: boolean;
+      build_after?: boolean;
+      backup_before_create?: boolean;
+    }
+  | {
+      action: "create_action";
+      project_path: string;
+      parent_name: string;
+      parent_index?: number;
+      name: string;
+      declaration?: string;
+      implementation?: string;
+      save_after?: boolean;
+      build_after?: boolean;
+      backup_before_create?: boolean;
+    }
+  | {
+      action: "create_transition";
+      project_path: string;
+      parent_name: string;
+      parent_index?: number;
+      name: string;
+      declaration?: string;
+      implementation?: string;
+      save_after?: boolean;
+      build_after?: boolean;
+      backup_before_create?: boolean;
+    }
+  | {
+      action: "create_dut";
+      project_path: string;
+      parent_name?: string;
+      name: string;
+      dut_type?: "structure" | "enum" | "union" | "alias";
+      base_type?: string;
+      declaration?: string;
+      save_after?: boolean;
+      build_after?: boolean;
+      backup_before_create?: boolean;
+    }
+  | {
+      action: "create_interface";
+      project_path: string;
+      parent_name?: string;
+      name: string;
+      declaration?: string;
+      save_after?: boolean;
+      build_after?: boolean;
+      backup_before_create?: boolean;
+    }
+  | {
+      action: "create_folder";
+      project_path: string;
+      parent_name?: string;
+      name: string;
+      save_after?: boolean;
+      backup_before_create?: boolean;
+    }
+  | {
+      action: "rename_object";
+      project_path: string;
+      object_name: string;
+      object_index?: number;
+      new_name: string;
+      save_after?: boolean;
+      backup_before_rename?: boolean;
+    }
+  | {
+      action: "delete_object";
+      project_path: string;
+      object_name: string;
+      object_index?: number;
+      save_after?: boolean;
+      backup_before_delete?: boolean;
+    }
+  | {
       action: "save_project";
       project_path: string;
     }
@@ -80,9 +259,6 @@ export type InoProShopCommand =
     };
 
 export type InoProShopRunnerOptions = {
-  inoproshopExe?: string;
-  adapterTemplatePath?: string;
-  profile?: string;
   timeoutMs?: number;
   bridgeDir?: string;
 };
@@ -134,7 +310,9 @@ async function waitForResult(
     await sleep(250);
   }
 
-  throw new Error("Bridge timeout after " + timeoutMs + " ms waiting for " + resultPath);
+  throw new Error(
+    "Bridge timeout after " + timeoutMs + " ms waiting for " + resultPath
+  );
 }
 
 export async function runInoProShopCommand(
@@ -192,7 +370,11 @@ export async function runInoProShopCommand(
 
     const resultRaw = await waitForResult(resultPath, timeoutMs, processLogPath);
 
-    await writeFile(join(logDir, "command.json"), JSON.stringify(commandWithId, null, 2), "utf8");
+    await writeFile(
+      join(logDir, "command.json"),
+      JSON.stringify(commandWithId, null, 2),
+      "utf8"
+    );
     await writeFile(join(logDir, "result.json"), resultRaw, "utf8");
 
     const result = JSON.parse(resultRaw);
@@ -204,7 +386,6 @@ export async function runInoProShopCommand(
   } catch (err) {
     await appendLog(processLogPath, "=== InoProShop MCP bridge request END ERROR ===");
     await appendLog(processLogPath, String(err));
-
     throw err;
   }
 }

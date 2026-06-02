@@ -9,7 +9,9 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "tsc",
-    "start": "node ./dist/server.js"
+    "start": "node ./dist/server.js",
+    "test:inoproshop:read": "tsx src/testRead.ts",
+    "start:inoproshop": "tsx src/inoproshopServer.ts"
   },
   "keywords": [
     "codesys",
@@ -43,6 +45,7 @@
   "devDependencies": {
     "@types/node": "^20.14.1",
     "@types/yargs": "^17.0.33",
-    "typescript": "^5.5.3"
+    "typescript": "^5.5.3",
+    "tsx": "^4.19.2"
   }
 }

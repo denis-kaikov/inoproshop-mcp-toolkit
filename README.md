@@ -1,434 +1,354 @@
 # InoProShop MCP Toolkit
 
-Model Context Protocol server for automating InoProShop / CODESYS-based PLC projects through the legacy CODESYS ScriptEngine used by InoProShop V1.9.1.6.
+MCP server for InoProShop / CODESYS SP11 automation through the legacy ScriptEngine.
 
-This toolkit is adapted for:
+Target setup:
 
 - InoProShop V1.9.1.6
 - CODESYS ScriptEngine.plugin 3.5.11.10
 - Python 2.7.7 inside InoProShop
-- Persistent bridge mode, so InoProShop is opened once and reused for MCP requests
-
-## Architecture
+- Persistent bridge mode
 
 ```text
-MCP client
-  -> Node.js MCP server
-    -> JSON request/result files
-      -> persistent Python bridge running inside InoProShop
-        -> CODESYS ScriptEngine API
-          -> PLC project
+MCP client -> Node.js MCP server -> JSON files -> Python bridge in InoProShop -> ScriptEngine -> PLC project
 ```
-
-The persistent bridge avoids opening a new InoProShop window for every request.
 
 ## Requirements
 
 - Windows
-- Node.js 18 or newer
-- InoProShop V1.9.1.6
-- InoProShop ScriptEngine enabled
+- Node.js 18+
+- InoProShop with ScriptEngine enabled
 - Repository path without spaces
 
-Recommended repository path:
+Recommended path:
 
 ```text
 C:\Users\kaykov\Desktop\inoproshop-mcp-toolkit
 ```
 
-Avoid paths like:
-
-```text
-C:\Users\kaykov\Desktop\Mcp innoproshop\inoproshop-mcp-toolkit
-```
-
-Legacy CODESYS ScriptEngine versions may fail to run scripts from paths containing spaces.
-
-## Installation
+## Install
 
 ```powershell
 cd C:\Users\kaykov\Desktop\inoproshop-mcp-toolkit
 npm install
+npm run build
 ```
 
-Copy startup scripts from `cmd/` to `C:\PLC\`:
+Copy command files:
 
 ```text
-cmd/start-inoproshop-mcp.cmd      -> C:\PLC\start-inoproshop-mcp.cmd
-cmd/start-inoproshop-bridge.cmd   -> C:\PLC\start-inoproshop-bridge.cmd
+cmd/start-inoproshop-mcp.cmd    -> C:\PLC\start-inoproshop-mcp.cmd
+cmd/start-inoproshop-bridge.cmd -> C:\PLC\start-inoproshop-bridge.cmd
 ```
 
-## Important paths
-
-Default InoProShop executable:
+## Paths
 
 ```text
-C:\Inovance Control\InoProShop\CODESYS\Common\InoProShop.exe
+InoProShop:  C:\Inovance Control\InoProShop\CODESYS\Common\InoProShop.exe
+Profile:     InoProShop(V1.9.1.6)
+Bridge:      C:\Temp\inoproshop-mcp-bridge
+Bridge log:  C:\Temp\inoproshop-mcp-bridge\bridge.log
+MCP logs:    C:\Temp\inoproshop-mcp-logs
 ```
 
-Default profile:
+Optional default project:
 
-```text
-InoProShop(V1.9.1.6)
+```powershell
+setx INOPROSHOP_PROJECT "C:\Users\kaykov\Desktop\Avanpost\PLC\PLC.project"
 ```
 
-Default project:
-
-```text
-C:\Users\kaykov\Desktop\Avanpost\PLC\PLC.project
-```
-
-Bridge directory:
-
-```text
-C:\Temp\inoproshop-mcp-bridge
-```
-
-Bridge log:
-
-```text
-C:\Temp\inoproshop-mcp-bridge\bridge.log
-```
-
-MCP request logs:
-
-```text
-C:\Temp\inoproshop-mcp-logs
-```
-
-## MCP configuration
+## MCP config
 
 ```json
 {
   "mcpServers": {
     "inoproshop": {
       "command": "cmd",
-      "args": [
-        "/c",
-        "C:\\PLC\\start-inoproshop-mcp.cmd"
-      ],
-      "env": {
-        "CODESYS_TIMEOUT_MS": "180000"
-      },
+      "args": ["/c", "C:\\PLC\\start-inoproshop-mcp.cmd"],
+      "env": { "CODESYS_TIMEOUT_MS": "180000" },
       "timeout": 180,
-      "disabled": false,
-      "alwaysAllow": []
+      "disabled": false
     }
   }
 }
 ```
 
+## Tools
+
+The MCP API is intentionally compact: 6 tools instead of many one-action tools.
+
+| Tool | Use |
+|---|---|
+| `inoproshop_bridge` | Bridge status/start/stop |
+| `inoproshop_project` | Project list/set/open/info/save |
+| `inoproshop_read` | Read programs, object, find, info, tree |
+| `inoproshop_edit` | Write/patch/rename/delete object |
+| `inoproshop_create` | Create POU, GVL, member, DUT, folder |
+| `inoproshop_compile` | Build and read errors/warnings |
+
 ## Basic workflow
 
-1. Start the MCP client.
-2. Call `inoproshop_bridge_status`.
-3. If the bridge is not active, call `inoproshop_start_bridge`.
-4. Call `inoproshop_get_project_info`.
-5. Use read, patch, create, build, or save tools.
-6. Stop the bridge with `inoproshop_stop_bridge` when finished.
+```text
+1. inoproshop_bridge { "action": "status" }
+2. inoproshop_bridge { "action": "start" }       # if not active
+3. inoproshop_project { "action": "open", "project_path": "...\\PLC.project" }
+4. inoproshop_read { "mode": "programs", "include_text": true }
+5. inoproshop_edit { ... }
+6. inoproshop_compile { "action": "errors" }
+7. inoproshop_project { "action": "save" }
+```
 
-## Available tools
+## Tool reference
 
-### Bridge management
+All selector fields have `enum` and short `Allowed: ...` descriptions in MCP schema.
 
-- `inoproshop_bridge_status`
-- `inoproshop_start_bridge`
-- `inoproshop_stop_bridge`
+### `inoproshop_bridge`
 
-### Project and diagnostics
+`action`: `status`, `start`, `stop`
 
-- `inoproshop_diagnose_system`
-- `inoproshop_get_project_info`
-- `inoproshop_get_project_tree`
-- `inoproshop_build_project`
-- `inoproshop_save_project`
-- `inoproshop_get_messages`
+```json
+{ "action": "status" }
+{ "action": "start", "timeout_ms": 30000 }
+{ "action": "stop", "timeout_ms": 15000 }
+```
 
-### Object search and read
+### `inoproshop_project`
 
-- `inoproshop_find_object`
-- `inoproshop_get_object_info`
-- `inoproshop_read_object`
+`action`: `status`, `list`, `set`, `clear`, `open`, `create`, `close`, `info`, `save`, `diagnose`
 
-### Full write tools
+Examples:
 
-- `inoproshop_write_declaration`
-- `inoproshop_write_implementation`
+```json
+{ "action": "list", "root": "C:\\Users\\kaykov\\Desktop", "recursive": true }
+```
 
-These replace the full declaration or implementation. Prefer patch tools for small edits.
+```json
+{ "action": "open", "project_path": "C:\\Users\\kaykov\\Desktop\\Avanpost\\PLC\\PLC.project" }
+```
 
-### Patch tools
+```json
+{ "action": "info" }
+```
 
-- `inoproshop_patch_declaration`
-- `inoproshop_patch_implementation`
+### `inoproshop_read`
 
-Supported operations:
+`mode`: `programs`, `object`, `find`, `info`, `tree`
 
-- `append`
-- `prepend`
-- `replace_exact`
-- `insert_before`
-- `insert_after`
-- `replace_between_markers`
+Read all textual PLC objects:
 
-Recommended marker patch example:
+```json
+{ "mode": "programs", "include_text": true, "max_nodes": 300 }
+```
+
+Read one object:
+
+```json
+{ "mode": "object", "object_name": "PLC_PRG", "include_text": true }
+```
+
+Find duplicates:
+
+```json
+{ "mode": "find", "object_name": "Pump" }
+```
+
+Small tree scan:
+
+```json
+{ "mode": "tree", "max_depth": 1, "max_nodes": 50 }
+```
+
+### `inoproshop_edit`
+
+`mode`: `write`, `patch`, `rename`, `delete`
+
+`target`: `declaration`, `implementation`
+
+`operation`: `append`, `prepend`, `replace_exact`, `insert_before`, `insert_after`, `replace_between_markers`
+
+Patch example:
 
 ```json
 {
-  "object_name": "Pump",
+  "mode": "patch",
+  "target": "implementation",
+  "object_name": "PLC_PRG",
   "operation": "replace_between_markers",
   "start_marker": "(* MCP_BEGIN *)",
   "end_marker": "(* MCP_END *)",
-  "text": "(* generated code here *)",
+  "text": "xDone := TRUE;",
   "create_if_missing": true,
   "save_after": true,
   "build_after": false,
-  "backup_before_write": true
+  "backup_before": true
 }
 ```
 
-### Creation tools
-
-- `inoproshop_create_pou`
-- `inoproshop_create_gvl`
-- `inoproshop_create_method`
-- `inoproshop_create_property`
-- `inoproshop_create_action`
-- `inoproshop_create_transition`
-- `inoproshop_create_dut`
-- `inoproshop_create_interface`
-- `inoproshop_create_folder`
-
-### Object maintenance tools
-
-- `inoproshop_rename_object`
-- `inoproshop_delete_object`
-
-Both tools create a project backup by default.
-
-
-## Tool input field reference
-
-Most tools share the same field names. Use this reference when constructing MCP calls.
-
-### Common fields
-
-| Field | Used by | Description |
-|---|---|---|
-| `project_path` | Most project/object tools | Full path to the `.project` file. If omitted, the server uses `INOPROSHOP_PROJECT`. |
-| `object_name` | Find, read, write, patch, rename, delete | Exact object name searched with `project.find(name, True)`. |
-| `object_index` | Read/write/patch/rename/delete | Optional zero-based index when multiple objects have the same name. Omit to auto-select the best textual object. |
-| `parent_name` | Create tools | Name of the parent container where the new object/member should be created. Defaults to `Application` for top-level objects. |
-| `parent_index` | Member create tools | Optional zero-based index when multiple parent objects have the same name. |
-| `name` | Create tools | Name of the new object/member. |
-| `save_after` | Write/create/patch/maintenance tools | Save the project after the operation. Defaults to `true`. |
-| `build_after` | Write/create/patch tools | Build the active application after the operation. Defaults to `false`. |
-| `backup_before_write` | Write/patch tools | Create a timestamped `.mcp_backup` before changing text. Defaults to `true`. |
-| `backup_before_create` | Create tools | Create a timestamped `.mcp_backup` before creating an object. Defaults to `true`. |
-
-### Text fields
-
-| Field | Description |
-|---|---|
-| `declaration` | Full textual declaration to write after creating an object. If omitted, the bridge tries to generate a minimal declaration. |
-| `implementation` | Full textual implementation/body to write after creating an object. Only applies when the created object supports `textual_implementation`. |
-| `text` | Text payload for write/patch tools. For full write tools it is the whole new text; for patch tools it is the inserted/replaced body. |
-
-### Patch fields
-
-| Field | Description |
-|---|---|
-| `operation` | One of `append`, `prepend`, `replace_exact`, `insert_before`, `insert_after`, `replace_between_markers`. |
-| `search_text` | Exact text to find for `replace_exact`. |
-| `replace_text` | Replacement text for `replace_exact`. |
-| `replace_all` | Replace all matches for `replace_exact` when `true`; otherwise replace the first match. |
-| `anchor` | Anchor text for `insert_before` and `insert_after`. |
-| `start_marker` | Start marker for `replace_between_markers`, for example `(* MCP_BEGIN *)`. |
-| `end_marker` | End marker for `replace_between_markers`, for example `(* MCP_END *)`. |
-| `create_if_missing` | For `replace_between_markers`: create the marker block at the end if it does not exist. |
-
-### POU/member creation fields
-
-| Field | Tool(s) | Description |
-|---|---|---|
-| `pou_type` | `inoproshop_create_pou` | `program`, `function_block`, or `function`. |
-| `return_type` | `inoproshop_create_pou`, `inoproshop_create_method` | Return type for Function or Method objects, for example `BOOL`, `INT`, `DINT`, `REAL`, or a user-defined type. |
-| `property_type` | `inoproshop_create_property` | Property data type, for example `BOOL`, `INT`, `REAL`, `STRING`, or a DUT name. |
-| `dut_type` | `inoproshop_create_dut` | `structure`, `enum`, `union`, or `alias`. |
-| `base_type` | `inoproshop_create_dut` | Base type for alias DUTs, for example `INT`, `DINT`, `REAL`, `BOOL`, `STRING`, or another user type. |
-
-### Project tree/build fields
-
-| Field | Description |
-|---|---|
-| `max_depth` | Maximum project tree recursion depth. Keep low on SP11/OEM projects. |
-| `max_nodes` | Maximum number of project tree nodes returned. |
-| `include_capabilities` | Include `has_declaration` / `has_implementation` flags in tree output. Slower than names-only tree. |
-| `include_messages` | Try to collect system/build messages after build. Best-effort on SP11/OEM builds. |
-
-## Examples
-
-### Create a Function Block
+Full write example:
 
 ```json
 {
+  "mode": "write",
+  "target": "implementation",
+  "object_name": "PLC_PRG",
+  "text": "xDone := TRUE;",
+  "backup_before": true
+}
+```
+
+Rename/delete:
+
+```json
+{ "mode": "rename", "object_name": "OldName", "new_name": "NewName" }
+{ "mode": "delete", "object_name": "TempObject" }
+```
+
+### `inoproshop_create`
+
+`kind`: `pou`, `gvl`, `method`, `property`, `action`, `transition`, `dut`, `interface`, `folder`
+
+`pou_type`: `program`, `function_block`, `function`
+
+`dut_type`: `structure`, `enum`, `union`, `alias`
+
+Create Function Block:
+
+```json
+{
+  "kind": "pou",
   "name": "MCP_Test_FB",
   "pou_type": "function_block",
-  "declaration": "FUNCTION_BLOCK MCP_Test_FB\r\nVAR_INPUT\r\n    xEnable : BOOL;\r\nEND_VAR\r\nVAR_OUTPUT\r\n    xDone : BOOL;\r\nEND_VAR",
+  "declaration": "FUNCTION_BLOCK MCP_Test_FB\r\nVAR_INPUT\r\n xEnable : BOOL;\r\nEND_VAR",
   "implementation": "xDone := xEnable;",
   "save_after": true,
-  "build_after": true,
-  "backup_before_create": true
+  "build_after": false,
+  "backup_before": true
 }
 ```
 
-Tool: `inoproshop_create_pou`
-
-### Create a Method under a Function Block
+Create method:
 
 ```json
 {
+  "kind": "method",
   "parent_name": "MCP_Test_FB",
   "name": "Reset",
   "declaration": "METHOD Reset\r\nVAR_INPUT\r\nEND_VAR",
-  "implementation": "xDone := FALSE;",
-  "save_after": true,
-  "build_after": false,
-  "backup_before_create": true
+  "implementation": "xDone := FALSE;"
 }
 ```
 
-Tool: `inoproshop_create_method`
-
-### Create a Property
+Create action:
 
 ```json
 {
-  "parent_name": "MCP_Test_FB",
-  "name": "Enabled",
-  "property_type": "BOOL",
-  "declaration": "PROPERTY Enabled : BOOL",
-  "save_after": true,
-  "build_after": false,
-  "backup_before_create": true
+  "kind": "action",
+  "parent_name": "PLC_PRG",
+  "name": "DoInit",
+  "implementation": "xReady := TRUE;"
 }
 ```
 
-Tool: `inoproshop_create_property`
-
-### Create an Action
+Create GVL:
 
 ```json
 {
-  "parent_name": "MCP_Test_FB",
-  "name": "DoWork",
-  "implementation": "xDone := xEnable;",
-  "save_after": true,
-  "build_after": false,
-  "backup_before_create": true
+  "kind": "gvl",
+  "name": "GVL_MCP",
+  "declaration": "VAR_GLOBAL\r\n g_xMcpEnabled : BOOL;\r\nEND_VAR"
 }
 ```
 
-Tool: `inoproshop_create_action`
-
-### Create a Structure DUT
+Create DUT:
 
 ```json
 {
+  "kind": "dut",
   "name": "ST_McpData",
   "dut_type": "structure",
-  "declaration": "TYPE ST_McpData :\r\nSTRUCT\r\n    xEnable : BOOL;\r\n    iValue : INT;\r\nEND_STRUCT\r\nEND_TYPE",
-  "save_after": true,
-  "build_after": true,
-  "backup_before_create": true
+  "declaration": "TYPE ST_McpData :\r\nSTRUCT\r\n xEnable : BOOL;\r\nEND_STRUCT\r\nEND_TYPE"
 }
 ```
 
-Tool: `inoproshop_create_dut`
+### `inoproshop_compile`
 
-### Create a GVL
+`action`: `build`, `errors`, `messages`
+
+Build and return parsed diagnostics:
 
 ```json
-{
-  "name": "GVL_MCP",
-  "declaration": "VAR_GLOBAL\r\n    g_xMcpEnabled : BOOL;\r\nEND_VAR",
-  "save_after": true,
-  "build_after": true,
-  "backup_before_create": true
-}
+{ "action": "errors", "build_first": true, "clear_messages_before_build": true }
 ```
 
-Tool: `inoproshop_create_gvl`
+Build with full message payload:
 
-## Safety model
+```json
+{ "action": "build", "include_messages": true }
+```
 
-By default, write, patch, create, rename, and delete operations create a timestamped backup next to the project file:
+Read current message buffer only:
+
+```json
+{ "action": "messages" }
+```
+
+## Common fields
+
+| Field | Meaning |
+|---|---|
+| `project_path` | Full `.project` path. Optional after `project.open` or `project.set`. |
+| `object_name` | Exact CODESYS object name. |
+| `object_index` | Index for duplicate names. |
+| `parent_name` | Parent object/container. |
+| `parent_index` | Index for duplicate parents. |
+| `include_text` | Return full declaration/implementation. |
+| `save_after` | Save after change. Default: `true`. |
+| `build_after` | Build after change. Default: `false`. |
+| `backup_before` | Create `.mcp_backup_*` first. Default: `true`. |
+
+## Safety
+
+Write, patch, create, rename, and delete create a timestamped backup by default:
 
 ```text
 PLC.project.mcp_backup_YYYYMMDD_HHMMSS
 ```
 
-Recommended safe workflow:
-
-1. Read the object first.
-2. Prefer patch tools over full write tools.
-3. Save.
-4. Build.
-5. Review build result and messages.
-
-## Known limitations
-
-### Graphical POUs
-
-Some graphical or OEM objects may have `textual_declaration` but no `textual_implementation`. Their declarations may be readable/editable, but their bodies cannot be edited as ST text.
-
-### Build result
-
-In InoProShop SP11, `Application.build()` may return `None` even when the build command executed successfully. Build messages are collected through best-effort system APIs and may vary by OEM build.
-
-### Create API compatibility
-
-Creation APIs vary across CODESYS SP versions and OEM builds. The bridge tries multiple overloads for `create_pou`, `create_method`, `create_property`, `create_dut`, and related APIs. If a tool fails, check:
+Safe agent flow:
 
 ```text
-C:\Temp\inoproshop-mcp-bridge\bridge.log
+read -> patch -> compile errors -> fix -> save
 ```
 
-### Project tree
+## Limitations
 
-`get_children()` may be slow on large SP11/OEM projects. Use low limits:
-
-```json
-{
-  "max_depth": 1,
-  "max_nodes": 50,
-  "include_capabilities": false
-}
-```
-
-For precise work, prefer `inoproshop_find_object` and `inoproshop_read_object`.
+- Graphical POUs may not expose editable ST implementation.
+- `Application.build()` can return `None` even when build ran.
+- Message APIs vary by SP11/OEM build.
+- Creation overloads vary by SP11/OEM build.
+- Large tree scans can be slow; prefer `read.programs` or `read.object`.
 
 ## Troubleshooting
 
-### Check bridge status
+Bridge status:
 
-```text
-inoproshop_bridge_status
+```json
+{ "action": "status" }
 ```
 
-### Check bridge log
+Bridge log:
 
 ```powershell
 Get-Content "C:\Temp\inoproshop-mcp-bridge\bridge.log" -Tail 100
 ```
 
-### Check MCP logs
+MCP logs:
 
 ```powershell
 explorer "C:\Temp\inoproshop-mcp-logs"
 ```
 
-### Run bridge manually
+Manual bridge start:
 
 ```powershell
 C:\PLC\start-inoproshop-bridge.cmd
@@ -436,14 +356,11 @@ C:\PLC\start-inoproshop-bridge.cmd
 
 ## Development notes
 
-All Python scripts must remain compatible with Python 2.7.
+Python bridge code must stay Python 2.7 compatible.
 
 Avoid:
 
 - f-strings
 - type hints
-- `pathlib`
+- pathlib
 - Python 3-only syntax
-- non-ASCII source text without `# -*- coding: utf-8 -*-`
-
-Prefer paths without spaces for Python scripts executed by InoProShop.

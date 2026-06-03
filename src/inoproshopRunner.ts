@@ -18,32 +18,12 @@ export type PatchOperation =
   | "replace_between_markers";
 
 export type InoProShopCommand =
-  | {
-      action: "diagnose_system";
-    }
-  | {
-      action: "open_project";
-      project_path: string;
-    }
-  | {
-      action: "create_project";
-      project_path: string;
-      overwrite?: boolean;
-    }
-  | {
-      action: "close_project";
-      project_path: string;
-      save_before_close?: boolean;
-    }
-  | {
-      action: "get_project_info";
-      project_path: string;
-    }
-  | {
-      action: "find_object";
-      project_path: string;
-      object_name: string;
-    }
+  | { action: "diagnose_system" }
+  | { action: "open_project"; project_path: string }
+  | { action: "create_project"; project_path: string; overwrite?: boolean }
+  | { action: "close_project"; project_path: string; save_before_close?: boolean }
+  | { action: "get_project_info"; project_path: string }
+  | { action: "find_object"; project_path: string; object_name: string }
   | {
       action: "get_object_info";
       project_path: string;
@@ -56,6 +36,12 @@ export type InoProShopCommand =
       object_name: string;
       include_text?: boolean;
       object_index?: number;
+    }
+  | {
+      action: "read_current_programs";
+      project_path: string;
+      include_text?: boolean;
+      max_nodes?: number;
     }
   | {
       action: "write_declaration";
@@ -136,7 +122,6 @@ export type InoProShopCommand =
       build_after?: boolean;
       backup_before_create?: boolean;
     }
-
   | {
       action: "create_method";
       project_path: string;
@@ -234,19 +219,14 @@ export type InoProShopCommand =
       save_after?: boolean;
       backup_before_delete?: boolean;
     }
-  | {
-      action: "save_project";
-      project_path: string;
-    }
+  | { action: "save_project"; project_path: string }
   | {
       action: "build_project";
       project_path: string;
       include_messages?: boolean;
+      clear_messages_before_build?: boolean;
     }
-  | {
-      action: "get_messages";
-      project_path: string;
-    }
+  | { action: "get_messages"; project_path: string }
   | {
       action: "get_project_tree";
       project_path: string;
@@ -254,9 +234,7 @@ export type InoProShopCommand =
       max_nodes?: number;
       include_capabilities?: boolean;
     }
-  | {
-      action: "stop_bridge";
-    };
+  | { action: "stop_bridge" };
 
 export type InoProShopRunnerOptions = {
   timeoutMs?: number;
@@ -300,13 +278,11 @@ async function waitForResult(
   processLogPath: string
 ): Promise<string> {
   const start = Date.now();
-
   while (Date.now() - start < timeoutMs) {
     if (await fileExists(resultPath)) {
       await appendLog(processLogPath, "result file detected: " + resultPath);
       return await readFile(resultPath, "utf8");
     }
-
     await sleep(250);
   }
 
@@ -318,7 +294,7 @@ async function waitForResult(
 export async function runInoProShopCommand(
   command: InoProShopCommand,
   options: InoProShopRunnerOptions
-): Promise<unknown> {
+): Promise<any> {
   const timeoutMs = options.timeoutMs || 180000;
   const bridgeDir =
     options.bridgeDir ||
@@ -327,7 +303,6 @@ export async function runInoProShopCommand(
 
   const requestsDir = join(bridgeDir, "requests");
   const resultsDir = join(bridgeDir, "results");
-
   const logRoot = "C:\\Temp\\inoproshop-mcp-logs";
   const action = sanitizeForPath((command as any).action || "unknown");
   const logDir = join(logRoot, timestampForPath() + "-" + action);
@@ -362,14 +337,11 @@ export async function runInoProShopCommand(
       JSON.stringify(commandWithId, null, 2),
       "utf8"
     );
-
     await rename(requestTmpPath, requestPath);
-
     await appendLog(processLogPath, "request written: " + requestPath);
     await appendLog(processLogPath, "waiting result: " + resultPath);
 
     const resultRaw = await waitForResult(resultPath, timeoutMs, processLogPath);
-
     await writeFile(
       join(logDir, "command.json"),
       JSON.stringify(commandWithId, null, 2),
@@ -378,10 +350,8 @@ export async function runInoProShopCommand(
     await writeFile(join(logDir, "result.json"), resultRaw, "utf8");
 
     const result = JSON.parse(resultRaw);
-
     await appendLog(processLogPath, "result OK");
     await appendLog(processLogPath, "=== InoProShop MCP bridge request END OK ===");
-
     return result;
   } catch (err) {
     await appendLog(processLogPath, "=== InoProShop MCP bridge request END ERROR ===");

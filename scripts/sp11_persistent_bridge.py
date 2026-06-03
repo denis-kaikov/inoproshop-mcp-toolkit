@@ -35,7 +35,7 @@ def to_unicode(value):
         try:
             return str(value).decode("utf-8", "replace")
         except Exception:
-            return u"<unprintable>"
+            return u""
 
 
 def safe_str(value):
@@ -117,6 +117,13 @@ def has_attr_safe(obj, name):
         return False
 
 
+def is_string_like(value):
+    try:
+        return isinstance(value, basestring)
+    except NameError:
+        return isinstance(value, str)
+
+
 def read_text_document(part):
     try:
         return to_unicode(part.text)
@@ -141,7 +148,9 @@ def write_text_document(part, text):
         return {"method": "part.replace(text)"}
     except Exception as e2:
         debug_log("write via part.replace(text) failed: " + safe_str(e2))
-    raise Exception("Cannot write text document. Tried part.text assignment and part.replace(text).")
+        raise Exception(
+            "Cannot write text document. Tried part.text assignment and part.replace(text)."
+        )
 
 
 def normalize_newline_block(text):
@@ -224,7 +233,7 @@ def patch_text_content(old_text, command):
                 "text": old_text + u"\r\n" + marker_block + u"\r\n",
                 "operation": operation,
                 "changed": True,
-                "created_marker_block": True
+                "created_marker_block": True,
             }
         replace_start = start_index
         replace_end = end_index + len(end_marker)
@@ -233,7 +242,7 @@ def patch_text_content(old_text, command):
             "text": new_text,
             "operation": operation,
             "changed": new_text != old_text,
-            "created_marker_block": False
+            "created_marker_block": False,
         }
 
     raise Exception("Unknown patch operation: " + safe_str(operation))
@@ -301,25 +310,17 @@ def open_project_cached(path):
     return project
 
 
-
-
 def create_project_compat(project_path, overwrite):
     global CURRENT_PROJECT
     global CURRENT_PROJECT_PATH
-
     debug_log("create_project_compat START: " + safe_str(project_path))
-
     if not project_path:
         raise Exception("project_path is required")
-
     project_dir = os.path.dirname(project_path)
-
     if project_dir and not os.path.isdir(project_dir):
         os.makedirs(project_dir)
-
     if os.path.exists(project_path) and not overwrite:
         raise Exception("Project already exists: " + project_path)
-
     if os.path.exists(project_path) and overwrite:
         backup_path = make_backup(project_path)
         debug_log("existing project backup created: " + backup_path)
@@ -327,12 +328,10 @@ def create_project_compat(project_path, overwrite):
     project = None
     create_method = None
     last_error = None
-
     attempts = [
         ("projects.create(project_path)", lambda: projects.create(project_path)),
-        ("projects.create()", lambda: projects.create())
+        ("projects.create()", lambda: projects.create()),
     ]
-
     for label, fn in attempts:
         try:
             project = fn()
@@ -342,19 +341,16 @@ def create_project_compat(project_path, overwrite):
         except Exception as e:
             last_error = e
             debug_log(label + " failed: " + safe_str(e))
-
     if project is None:
         raise Exception("Cannot create project. Last error: " + safe_str(last_error))
 
     save_method = None
-
     try:
         project.save_as(project_path)
         save_method = "project.save_as(project_path)"
         debug_log(save_method + " OK")
     except Exception as e1:
         debug_log("project.save_as(project_path) failed: " + safe_str(e1))
-
         try:
             project.save()
             save_method = "project.save()"
@@ -362,41 +358,35 @@ def create_project_compat(project_path, overwrite):
         except Exception as e2:
             debug_log("project.save() failed: " + safe_str(e2))
             raise Exception(
-                "Project created but could not be saved to path. save_as error: " +
-                safe_str(e1) +
-                "; save error: " +
-                safe_str(e2)
+                "Project created but could not be saved to path. save_as error: "
+                + safe_str(e1)
+                + "; save error: "
+                + safe_str(e2)
             )
 
     CURRENT_PROJECT = project
     CURRENT_PROJECT_PATH = normalize_path(project_path)
-
     return {
         "created": True,
         "project_path": project_path,
         "create_method": create_method,
         "save_method": save_method,
-        "project": project_info(project, project_path)
+        "project": project_info(project, project_path),
     }
 
 
 def close_project_compat(project, project_path, save_before_close):
     global CURRENT_PROJECT
     global CURRENT_PROJECT_PATH
-
     debug_log("close_project_compat START: " + safe_str(project_path))
-
     if save_before_close:
         save_project(project)
-
     close_method = None
     last_error = None
-
     attempts = [
         ("project.close()", lambda: project.close()),
-        ("projects.close(project)", lambda: projects.close(project))
+        ("projects.close(project)", lambda: projects.close(project)),
     ]
-
     for label, fn in attempts:
         try:
             fn()
@@ -406,10 +396,8 @@ def close_project_compat(project, project_path, save_before_close):
         except Exception as e:
             last_error = e
             debug_log(label + " failed: " + safe_str(e))
-
     if close_method is None:
         raise Exception("Cannot close project. Last error: " + safe_str(last_error))
-
     try:
         if CURRENT_PROJECT_PATH == normalize_path(project_path):
             CURRENT_PROJECT = None
@@ -417,13 +405,13 @@ def close_project_compat(project, project_path, save_before_close):
     except Exception:
         CURRENT_PROJECT = None
         CURRENT_PROJECT_PATH = None
-
     return {
         "closed": True,
         "project_path": project_path,
         "close_method": close_method,
-        "saved_before_close": bool(save_before_close)
+        "saved_before_close": bool(save_before_close),
     }
+
 
 def project_info(project, project_path):
     info = {
@@ -431,7 +419,7 @@ def project_info(project, project_path):
         "project_object": safe_str(project),
         "path": None,
         "dirty": None,
-        "active_application": None
+        "active_application": None,
     }
     try:
         info["path"] = safe_str(project.path)
@@ -449,7 +437,7 @@ def project_info(project, project_path):
             "has_build": has_attr_safe(app, "build"),
             "has_clean": has_attr_safe(app, "clean"),
             "has_rebuild": has_attr_safe(app, "rebuild"),
-            "has_generate_code": has_attr_safe(app, "generate_code")
+            "has_generate_code": has_attr_safe(app, "generate_code"),
         }
     except Exception as e:
         info["active_application_error"] = safe_str(e)
@@ -470,7 +458,7 @@ def object_basic_info(obj):
         "has_create_pou": has_attr_safe(obj, "create_pou"),
         "has_create_gvl": has_attr_safe(obj, "create_gvl"),
         "has_create_method": has_attr_safe(obj, "create_method"),
-        "has_create_property": has_attr_safe(obj, "create_property")
+        "has_create_property": has_attr_safe(obj, "create_property"),
     }
     for attr in ["guid", "type", "is_folder"]:
         try:
@@ -560,66 +548,300 @@ def save_project(project):
     return {"saved": True}
 
 
+MESSAGE_ATTRS = [
+    ("text", ["text", "Text", "message", "Message", "description", "Description", "message_text", "MessageText"]),
+    ("severity", ["severity", "Severity", "type", "Type", "message_type", "MessageType"]),
+    ("category", ["category", "Category"]),
+    ("source", ["source", "Source", "object", "Object"]),
+    ("file", ["file", "File", "filename", "FileName", "path", "Path"]),
+    ("line", ["line", "Line", "line_number", "LineNumber"]),
+    ("column", ["column", "Column", "column_number", "ColumnNumber"]),
+    ("position", ["position", "Position"]),
+    ("number", ["number", "Number"]),
+    ("code", ["code", "Code", "error_code", "ErrorCode"]),
+]
+
+
+def compact_message_value(value):
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return bool(value)
+    try:
+        numeric_types = (int, long, float)
+    except NameError:
+        numeric_types = (int, float)
+    if isinstance(value, numeric_types):
+        return value
+    return safe_str(value)
+
+
+def collection_to_list(value):
+    if value is None:
+        return []
+    if is_string_like(value):
+        return [value]
+    try:
+        return list(value)
+    except Exception:
+        pass
+    result = []
+    try:
+        count = len(value)
+        for index in range(count):
+            try:
+                result.append(value[index])
+            except Exception:
+                pass
+        return result
+    except Exception:
+        pass
+    return [value]
+
+
+def try_read_message_attr(msg, attr):
+    try:
+        value = getattr(msg, attr)
+        if callable(value):
+            try:
+                value = value()
+            except TypeError:
+                return False, None
+        return True, value
+    except Exception:
+        return False, None
+
+
+def classify_message(item):
+    text_parts = []
+    for key in item:
+        value = item.get(key)
+        if value is None:
+            continue
+        text_parts.append(to_unicode(value))
+    text = u" ".join(text_parts).lower()
+    for token in [u"error", u"exception", u"failed", u"ошиб", u"fehler"]:
+        if token in text:
+            return "error"
+    for token in [u"warning", u"warn", u"предупреж", u"warnung"]:
+        if token in text:
+            return "warning"
+    return "info"
+
+
+def message_to_dict(msg, source_method, category_info, index):
+    item = {
+        "object": safe_str(msg),
+        "source_method": safe_str(source_method),
+        "index": index,
+    }
+    if category_info is not None:
+        item["category_object"] = category_info.get("object")
+        if "description" in category_info:
+            item["category_description"] = category_info.get("description")
+    for output_key, attr_names in MESSAGE_ATTRS:
+        for attr in attr_names:
+            ok, value = try_read_message_attr(msg, attr)
+            if ok:
+                item[output_key] = compact_message_value(value)
+                break
+    if has_attr_safe(msg, "call_details_handler"):
+        item["has_details_handler"] = True
+    item["kind"] = classify_message(item)
+    return item
+
+
+def message_identity(item):
+    keys = [
+        "category_description",
+        "severity",
+        "text",
+        "message",
+        "description",
+        "source",
+        "file",
+        "line",
+        "column",
+        "number",
+        "code",
+        "object",
+    ]
+    parts = []
+    for key in keys:
+        if key in item:
+            parts.append(to_unicode(item.get(key)))
+    return u"|".join(parts)
+
+
+def append_message(result, item):
+    key = message_identity(item)
+    if key in result["_seen"]:
+        return False
+    result["_seen"].add(key)
+    result["messages"].append(item)
+    return True
+
+
+def collect_from_source(result, source_method, raw_messages, category_info=None):
+    items = collection_to_list(raw_messages)
+    result["diagnostics"][source_method + "_count"] = len(items)
+    added = 0
+    for index, msg in enumerate(items):
+        try:
+            if append_message(result, message_to_dict(msg, source_method, category_info, index)):
+                added += 1
+        except Exception as e:
+            result["diagnostics"][source_method + "_item_" + safe_str(index) + "_error"] = safe_str(e)
+    result["diagnostics"][source_method + "_added"] = added
+    return added
+
+
+def try_message_source(result, source_method, fn, category_info=None):
+    try:
+        raw_messages = fn()
+        result["diagnostics"][source_method + "_ok"] = True
+        return collect_from_source(result, source_method, raw_messages, category_info)
+    except Exception as e:
+        result["diagnostics"][source_method + "_error"] = safe_str(e)
+        return 0
+
+
+def finalize_messages_result(result):
+    result["count"] = len(result["messages"])
+    result["errors"] = []
+    result["warnings"] = []
+    result["infos"] = []
+    for msg in result["messages"]:
+        kind = msg.get("kind")
+        if kind == "error":
+            result["errors"].append(msg)
+        elif kind == "warning":
+            result["warnings"].append(msg)
+        else:
+            result["infos"].append(msg)
+    result["error_count"] = len(result["errors"])
+    result["warning_count"] = len(result["warnings"])
+    result["info_count"] = len(result["infos"])
+    if "_seen" in result:
+        del result["_seen"]
+    return result
+
+
+def clear_system_messages():
+    result = {"available": False, "cleared": False, "diagnostics": {}}
+    try:
+        sys_obj = system
+        result["available"] = True
+    except Exception as e:
+        result["diagnostics"]["system_error"] = safe_str(e)
+        return result
+    if has_attr_safe(sys_obj, "clear_messages"):
+        try:
+            sys_obj.clear_messages()
+            result["cleared"] = True
+            result["method"] = "system.clear_messages()"
+            return result
+        except Exception as e:
+            result["diagnostics"]["system.clear_messages()_error"] = safe_str(e)
+    return result
+
+
 def collect_messages():
-    result = {"available": False, "messages": [], "diagnostics": {}}
+    result = {
+        "available": False,
+        "messages": [],
+        "errors": [],
+        "warnings": [],
+        "infos": [],
+        "diagnostics": {},
+        "_seen": set(),
+    }
     try:
         sys_obj = system
         result["available"] = True
         result["diagnostics"]["system_object"] = safe_str(sys_obj)
     except Exception as e:
         result["diagnostics"]["system_error"] = safe_str(e)
-        return result
+        return finalize_messages_result(result)
     try:
         result["diagnostics"]["system_dir"] = [safe_str(x) for x in dir(sys_obj)]
     except Exception as e:
         result["diagnostics"]["system_dir_error"] = safe_str(e)
-    raw_messages = None
-    try:
-        if has_attr_safe(sys_obj, "get_messages"):
-            raw_messages = sys_obj.get_messages()
-            result["diagnostics"]["get_messages_noargs_ok"] = True
-    except Exception as e:
-        result["diagnostics"]["get_messages_noargs_error"] = safe_str(e)
-    if raw_messages is None:
+
+    if has_attr_safe(sys_obj, "get_messages"):
+        try_message_source(result, "system.get_messages()", lambda: sys_obj.get_messages())
+    if has_attr_safe(sys_obj, "get_message_objects"):
+        try_message_source(result, "system.get_message_objects()", lambda: sys_obj.get_message_objects())
+    if has_attr_safe(sys_obj, "messages"):
+        try_message_source(result, "system.messages", lambda: sys_obj.messages)
+
+    categories = []
+    if has_attr_safe(sys_obj, "get_message_categories"):
         try:
-            if has_attr_safe(sys_obj, "messages"):
-                raw_messages = sys_obj.messages
-                result["diagnostics"]["messages_attr_ok"] = True
+            categories = collection_to_list(sys_obj.get_message_categories())
+            result["diagnostics"]["message_categories_count"] = len(categories)
         except Exception as e:
-            result["diagnostics"]["messages_attr_error"] = safe_str(e)
-    if raw_messages is None:
-        return result
-    try:
-        result["diagnostics"]["raw_messages_count"] = len(raw_messages)
-    except Exception:
-        result["diagnostics"]["raw_messages_count"] = -1
-    try:
-        for msg in raw_messages:
-            item = {"object": safe_str(msg)}
-            for attr in ["text", "message", "description", "severity", "category", "source", "file", "line", "column", "position", "number", "code"]:
-                try:
-                    value = getattr(msg, attr)
-                    if callable(value):
-                        value = value()
-                    item[attr] = safe_str(value)
-                except Exception:
-                    pass
-            result["messages"].append(item)
-    except Exception as e:
-        result["diagnostics"]["iterate_messages_error"] = safe_str(e)
-    return result
+            result["diagnostics"]["get_message_categories_error"] = safe_str(e)
+
+    for category_index, category in enumerate(categories):
+        category_info = {"object": safe_str(category), "index": category_index}
+        if has_attr_safe(sys_obj, "get_message_category_description"):
+            try:
+                category_info["description"] = safe_str(sys_obj.get_message_category_description(category))
+            except Exception as e:
+                category_info["description_error"] = safe_str(e)
+        category_label = "category_" + safe_str(category_index)
+        if has_attr_safe(sys_obj, "get_message_objects"):
+            try_message_source(
+                result,
+                "system.get_message_objects(" + category_label + ")",
+                lambda category=category: sys_obj.get_message_objects(category),
+                category_info,
+            )
+            try_message_source(
+                result,
+                "system.get_message_objects(" + category_label + ", True)",
+                lambda category=category: sys_obj.get_message_objects(category, True),
+                category_info,
+            )
+        if has_attr_safe(sys_obj, "get_messages"):
+            try_message_source(
+                result,
+                "system.get_messages(" + category_label + ")",
+                lambda category=category: sys_obj.get_messages(category),
+                category_info,
+            )
+
+    return finalize_messages_result(result)
 
 
-def build_project(project, include_messages):
+def build_project(project, include_messages, clear_messages_before_build=True):
     debug_log("build_project START")
     app = project.active_application
     debug_log("active_application OK: " + safe_name(app))
+    result = {"clear_messages_before_build": bool(clear_messages_before_build)}
+    if clear_messages_before_build:
+        result["clear_messages"] = clear_system_messages()
     debug_log("app.build START")
-    build_result = app.build()
-    debug_log("app.build OK: " + safe_str(build_result))
-    result = {"build_result": safe_str(build_result)}
+    try:
+        build_result = app.build()
+        debug_log("app.build OK: " + safe_str(build_result))
+        result["build_result"] = safe_str(build_result)
+    except Exception as e:
+        result["build_exception"] = safe_str(e)
+        result["build_traceback"] = traceback.format_exc()
+        debug_log("app.build FAILED: " + safe_str(e))
     if include_messages:
-        result["messages"] = collect_messages()
+        messages = collect_messages()
+        result["messages"] = messages
+        result["compile_error_count"] = messages.get("error_count", 0)
+        result["compile_warning_count"] = messages.get("warning_count", 0)
+        result["compile_errors"] = messages.get("errors", [])
+        result["compile_warnings"] = messages.get("warnings", [])
+        if "build_exception" in result:
+            result["success"] = False
+        elif messages.get("available"):
+            result["success"] = messages.get("error_count", 0) == 0
     return result
 
 
@@ -642,7 +864,7 @@ def get_children_compat(obj, full_path):
 
 def tree_node(obj, path, depth, state, max_nodes, include_capabilities):
     if state["count"] >= max_nodes:
-        return {"name": "<limit reached>", "path": path + "/<limit reached>", "children": []}
+        return {"name": "", "path": path + "/", "children": []}
     state["count"] += 1
     name = safe_name(obj)
     full_path = path + "/" + name
@@ -655,7 +877,7 @@ def tree_node(obj, path, depth, state, max_nodes, include_capabilities):
     children = get_children_compat(obj, full_path)
     for child in children:
         if state["count"] >= max_nodes:
-            node["children"].append({"name": "<limit reached>", "path": full_path + "/<limit reached>", "children": []})
+            node["children"].append({"name": "", "path": full_path + "/", "children": []})
             break
         node["children"].append(tree_node(child, full_path, depth - 1, state, max_nodes, include_capabilities))
     return node
@@ -672,8 +894,50 @@ def get_project_tree(project, max_depth, max_nodes, include_capabilities):
         "max_depth": max_depth,
         "max_nodes": max_nodes,
         "visited_nodes": state["count"],
-        "tree": tree
+        "tree": tree,
     }
+
+
+def read_current_programs(project, include_text, max_nodes):
+    debug_log("read_current_programs START")
+    app = project.active_application
+    result = {
+        "application_name": safe_name(app),
+        "max_nodes": max_nodes,
+        "visited_nodes": 0,
+        "objects": [],
+    }
+
+    def visit(obj, path):
+        if result["visited_nodes"] >= max_nodes:
+            result["truncated"] = True
+            return
+        result["visited_nodes"] += 1
+        name = safe_name(obj)
+        full_path = path + "/" + name
+        if has_attr_safe(obj, "textual_declaration") or has_attr_safe(obj, "textual_implementation"):
+            try:
+                info = object_info(obj, include_text)
+                info["path"] = full_path
+                result["objects"].append(info)
+            except Exception as e:
+                result["objects"].append({"name": name, "path": full_path, "error": safe_str(e)})
+        children = get_children_compat(obj, full_path)
+        for child in children:
+            if result["visited_nodes"] >= max_nodes:
+                result["truncated"] = True
+                return
+            visit(child, full_path)
+
+    visit(app, "")
+    result["count"] = len(result["objects"])
+    debug_log(
+        "read_current_programs END visited="
+        + safe_str(result["visited_nodes"])
+        + " textual="
+        + safe_str(result["count"])
+    )
+    return result
 
 
 def write_object_text(project, project_path, object_name, part_name, new_text, object_index, save_after, build_after, backup_before_write):
@@ -695,6 +959,7 @@ def write_object_text(project, project_path, object_name, part_name, new_text, o
         part = target.textual_implementation
     else:
         raise Exception("Unknown text part: " + part_name)
+
     old_text = read_text_document(part)
     write_result = write_text_document(part, new_text)
     result = {
@@ -707,7 +972,7 @@ def write_object_text(project, project_path, object_name, part_name, new_text, o
         "write_method": write_result["method"],
         "backup_path": backup_path,
         "saved": False,
-        "build": None
+        "build": None,
     }
     if save_after:
         result["save"] = save_project(project)
@@ -739,6 +1004,7 @@ def patch_object_text(project, project_path, command, part_name):
         part = target.textual_implementation
     else:
         raise Exception("Unknown patch part: " + part_name)
+
     old_text = read_text_document(part)
     patch_result = patch_text_content(old_text, command)
     new_text = patch_result["text"]
@@ -755,7 +1021,7 @@ def patch_object_text(project, project_path, command, part_name):
         "write_method": write_result["method"],
         "backup_path": backup_path,
         "saved": False,
-        "build": None
+        "build": None,
     }
     if "created_marker_block" in patch_result:
         result["created_marker_block"] = patch_result["created_marker_block"]
@@ -769,7 +1035,6 @@ def patch_object_text(project, project_path, command, part_name):
 
 def get_pou_type(kind):
     kind = to_unicode(kind).lower()
-    candidates = []
     if kind in [u"program", u"prg"]:
         candidates = ["Program", "PROGRAM"]
     elif kind in [u"function_block", u"functionblock", u"fb"]:
@@ -897,7 +1162,7 @@ def create_pou_object(project, project_path, command):
         "implementation_write": implementation_write,
         "backup_path": backup_path,
         "saved": False,
-        "build": None
+        "build": None,
     }
     if save_after:
         result["save"] = save_project(project)
@@ -953,7 +1218,7 @@ def create_gvl_object(project, project_path, command):
         "declaration_write": declaration_write,
         "backup_path": backup_path,
         "saved": False,
-        "build": None
+        "build": None,
     }
     if save_after:
         result["save"] = save_project(project)
@@ -963,15 +1228,11 @@ def create_gvl_object(project, project_path, command):
     return result
 
 
-
-
 def create_member_compat(parent, member_kind, name, return_type, property_type):
     member_kind = to_unicode(member_kind).lower()
     name = to_unicode(name)
     last_error = None
-
     attempts = []
-
     if member_kind == u"method":
         if return_type:
             attempts.append(("create_method(name, return_type)", lambda: parent.create_method(name, return_type)))
@@ -979,54 +1240,43 @@ def create_member_compat(parent, member_kind, name, return_type, property_type):
         if return_type:
             attempts.append(("create_method(name=name, return_type=return_type)", lambda: parent.create_method(name=name, return_type=return_type)))
         attempts.append(("create_method(name=name)", lambda: parent.create_method(name=name)))
-
     elif member_kind == u"property":
         ptype = property_type or return_type or u"BOOL"
         attempts.append(("create_property(name, ptype)", lambda: parent.create_property(name, ptype)))
         attempts.append(("create_property(name)", lambda: parent.create_property(name)))
         attempts.append(("create_property(name=name, type=ptype)", lambda: parent.create_property(name=name, type=ptype)))
         attempts.append(("create_property(name=name)", lambda: parent.create_property(name=name)))
-
     elif member_kind == u"action":
         attempts.append(("create_action(name)", lambda: parent.create_action(name)))
         attempts.append(("create_action(name=name)", lambda: parent.create_action(name=name)))
-
     elif member_kind == u"transition":
         attempts.append(("create_transition(name)", lambda: parent.create_transition(name)))
         attempts.append(("create_transition(name=name)", lambda: parent.create_transition(name=name)))
-
     else:
         raise Exception("Unsupported member kind: " + safe_str(member_kind))
-
     for label, fn in attempts:
         try:
             return fn(), label
         except Exception as e:
             last_error = e
             debug_log(label + " failed: " + safe_str(e))
-
     raise Exception("Cannot create " + safe_str(member_kind) + ". Last error: " + safe_str(last_error))
 
 
 def default_member_declaration(name, member_kind, return_type, property_type):
     name = to_unicode(name)
     member_kind = to_unicode(member_kind).lower()
-
     if member_kind == u"method":
         if return_type:
             return u"METHOD " + name + u" : " + to_unicode(return_type) + u"\r\nVAR_INPUT\r\nEND_VAR"
         return u"METHOD " + name + u"\r\nVAR_INPUT\r\nEND_VAR"
-
     if member_kind == u"property":
         ptype = to_unicode(property_type or return_type or u"BOOL")
         return u"PROPERTY " + name + u" : " + ptype
-
     if member_kind == u"action":
         return u"ACTION " + name
-
     if member_kind == u"transition":
         return u"TRANSITION " + name
-
     raise Exception("Unsupported member kind: " + safe_str(member_kind))
 
 
@@ -1040,42 +1290,25 @@ def create_member_object(project, project_path, command, member_kind):
     save_after = bool(command.get("save_after", True))
     build_after = bool(command.get("build_after", False))
     backup_before_create = bool(command.get("backup_before_create", True))
-
     if not parent_name:
         raise Exception("parent_name is required for creating " + safe_str(member_kind))
-
     if not name:
         raise Exception("name is required")
-
     backup_path = None
-
     if backup_before_create:
         backup_path = make_backup(project_path)
-
     parent, found = select_object_by_index_or_best(project, parent_name, command.get("parent_index"))
     created, create_method = create_member_compat(parent, member_kind, name, return_type, property_type)
-
     declaration_write = None
     implementation_write = None
-
     if declaration is None:
         declaration = default_member_declaration(name, member_kind, return_type, property_type)
-
     if has_attr_safe(created, "textual_declaration"):
-        declaration_write = write_text_document(
-            created.textual_declaration,
-            normalize_newline_block(declaration)
-        )
-
+        declaration_write = write_text_document(created.textual_declaration, normalize_newline_block(declaration))
     if implementation is not None:
         if not has_attr_safe(created, "textual_implementation"):
             raise Exception("Created object has no textual_implementation")
-
-        implementation_write = write_text_document(
-            created.textual_implementation,
-            normalize_newline_block(implementation)
-        )
-
+        implementation_write = write_text_document(created.textual_implementation, normalize_newline_block(implementation))
     result = {
         "name": name,
         "member_kind": member_kind,
@@ -1087,22 +1320,18 @@ def create_member_object(project, project_path, command, member_kind):
         "implementation_write": implementation_write,
         "backup_path": backup_path,
         "saved": False,
-        "build": None
+        "build": None,
     }
-
     if save_after:
         result["save"] = save_project(project)
         result["saved"] = True
-
     if build_after:
         result["build"] = build_project(project, True)
-
     return result
 
 
 def get_dut_type(kind):
     kind = to_unicode(kind or u"structure").lower()
-
     if kind in [u"structure", u"struct"]:
         candidates = ["Structure", "STRUCTURE", "Struct"]
     elif kind in [u"enum", u"enumeration"]:
@@ -1113,18 +1342,15 @@ def get_dut_type(kind):
         candidates = ["Alias", "ALIAS"]
     else:
         candidates = []
-
     try:
         dut_type_obj = DutType
     except Exception:
         return None
-
     for candidate in candidates:
         try:
             return getattr(dut_type_obj, candidate)
         except Exception:
             pass
-
     return None
 
 
@@ -1132,42 +1358,32 @@ def create_dut_compat(parent, name, dut_type):
     name = to_unicode(name)
     dut_type_value = get_dut_type(dut_type)
     attempts = []
-
     if dut_type_value is not None:
         attempts.append(("create_dut(name, dut_type)", lambda: parent.create_dut(name, dut_type_value)))
         attempts.append(("create_dut(name=name, type=dut_type)", lambda: parent.create_dut(name=name, type=dut_type_value)))
-
     attempts.append(("create_dut(name)", lambda: parent.create_dut(name)))
     attempts.append(("create_dut(name=name)", lambda: parent.create_dut(name=name)))
-
     last_error = None
-
     for label, fn in attempts:
         try:
             return fn(), label
         except Exception as e:
             last_error = e
             debug_log(label + " failed: " + safe_str(e))
-
     raise Exception("Cannot create DUT. Last error: " + safe_str(last_error))
 
 
 def default_dut_declaration(name, dut_type, base_type):
     name = to_unicode(name)
     dut_type = to_unicode(dut_type or u"structure").lower()
-
     if dut_type in [u"structure", u"struct"]:
         return u"TYPE " + name + u" :\r\nSTRUCT\r\nEND_STRUCT\r\nEND_TYPE"
-
     if dut_type in [u"enum", u"enumeration"]:
-        return u"TYPE " + name + u" :\r\n(\r\n    Value1\r\n);\r\nEND_TYPE"
-
+        return u"TYPE " + name + u" :\r\n(\r\n Value1\r\n);\r\nEND_TYPE"
     if dut_type == u"union":
         return u"TYPE " + name + u" :\r\nUNION\r\nEND_UNION\r\nEND_TYPE"
-
     if dut_type == u"alias":
         return u"TYPE " + name + u" : " + to_unicode(base_type or u"BOOL") + u";\r\nEND_TYPE"
-
     raise Exception("Unsupported DUT type: " + safe_str(dut_type))
 
 
@@ -1180,29 +1396,19 @@ def create_dut_object(project, project_path, command):
     save_after = bool(command.get("save_after", True))
     build_after = bool(command.get("build_after", False))
     backup_before_create = bool(command.get("backup_before_create", True))
-
     if not name:
         raise Exception("name is required")
-
     backup_path = None
-
     if backup_before_create:
         backup_path = make_backup(project_path)
-
     parent, found_count = select_parent(project, parent_name)
     created, create_method = create_dut_compat(parent, name, dut_type)
-
     if declaration is None:
         declaration = default_dut_declaration(name, dut_type, base_type)
-
     if has_attr_safe(created, "textual_declaration"):
-        declaration_write = write_text_document(
-            created.textual_declaration,
-            normalize_newline_block(declaration)
-        )
+        declaration_write = write_text_document(created.textual_declaration, normalize_newline_block(declaration))
     else:
         raise Exception("Created DUT has no textual_declaration")
-
     result = {
         "name": name,
         "dut_type": dut_type,
@@ -1213,16 +1419,13 @@ def create_dut_object(project, project_path, command):
         "declaration_write": declaration_write,
         "backup_path": backup_path,
         "saved": False,
-        "build": None
+        "build": None,
     }
-
     if save_after:
         result["save"] = save_project(project)
         result["saved"] = True
-
     if build_after:
         result["build"] = build_project(project, True)
-
     return result
 
 
@@ -1233,28 +1436,21 @@ def create_interface_object(project, project_path, command):
     save_after = bool(command.get("save_after", True))
     build_after = bool(command.get("build_after", False))
     backup_before_create = bool(command.get("backup_before_create", True))
-
     if not name:
         raise Exception("name is required")
-
     if declaration is None:
         declaration = u"INTERFACE " + to_unicode(name) + u"\r\nEND_INTERFACE"
-
     backup_path = None
-
     if backup_before_create:
         backup_path = make_backup(project_path)
-
     parent, found_count = select_parent(project, parent_name)
-
     last_error = None
     created = None
     create_method = None
-
-    attempts = []
-    attempts.append(("create_interface(name)", lambda: parent.create_interface(name)))
-    attempts.append(("create_interface(name=name)", lambda: parent.create_interface(name=name)))
-
+    attempts = [
+        ("create_interface(name)", lambda: parent.create_interface(name)),
+        ("create_interface(name=name)", lambda: parent.create_interface(name=name)),
+    ]
     for label, fn in attempts:
         try:
             created = fn()
@@ -1263,15 +1459,11 @@ def create_interface_object(project, project_path, command):
         except Exception as e:
             last_error = e
             debug_log(label + " failed: " + safe_str(e))
-
     if created is None:
         raise Exception("Cannot create interface. Last error: " + safe_str(last_error))
-
     declaration_write = None
-
     if has_attr_safe(created, "textual_declaration"):
         declaration_write = write_text_document(created.textual_declaration, normalize_newline_block(declaration))
-
     result = {
         "name": name,
         "parent_name": parent_name,
@@ -1281,16 +1473,13 @@ def create_interface_object(project, project_path, command):
         "declaration_write": declaration_write,
         "backup_path": backup_path,
         "saved": False,
-        "build": None
+        "build": None,
     }
-
     if save_after:
         result["save"] = save_project(project)
         result["saved"] = True
-
     if build_after:
         result["build"] = build_project(project, True)
-
     return result
 
 
@@ -1299,24 +1488,19 @@ def create_folder_object(project, project_path, command):
     name = command.get("name")
     save_after = bool(command.get("save_after", True))
     backup_before_create = bool(command.get("backup_before_create", True))
-
     if not name:
         raise Exception("name is required")
-
     backup_path = None
-
     if backup_before_create:
         backup_path = make_backup(project_path)
-
     parent, found_count = select_parent(project, parent_name)
     last_error = None
     created = None
     create_method = None
-
-    attempts = []
-    attempts.append(("create_folder(name)", lambda: parent.create_folder(name)))
-    attempts.append(("create_folder(name=name)", lambda: parent.create_folder(name=name)))
-
+    attempts = [
+        ("create_folder(name)", lambda: parent.create_folder(name)),
+        ("create_folder(name=name)", lambda: parent.create_folder(name=name)),
+    ]
     for label, fn in attempts:
         try:
             created = fn()
@@ -1325,10 +1509,8 @@ def create_folder_object(project, project_path, command):
         except Exception as e:
             last_error = e
             debug_log(label + " failed: " + safe_str(e))
-
     if created is None:
         raise Exception("Cannot create folder. Last error: " + safe_str(last_error))
-
     result = {
         "name": name,
         "parent_name": parent_name,
@@ -1336,13 +1518,11 @@ def create_folder_object(project, project_path, command):
         "create_method": create_method,
         "created_object": object_basic_info(created),
         "backup_path": backup_path,
-        "saved": False
+        "saved": False,
     }
-
     if save_after:
         result["save"] = save_project(project)
         result["saved"] = True
-
     return result
 
 
@@ -1352,22 +1532,16 @@ def rename_object(project, project_path, command):
     object_index = command.get("object_index")
     save_after = bool(command.get("save_after", True))
     backup_before_rename = bool(command.get("backup_before_rename", True))
-
     if not object_name:
         raise Exception("object_name is required")
-
     if not new_name:
         raise Exception("new_name is required")
-
     backup_path = None
-
     if backup_before_rename:
         backup_path = make_backup(project_path)
-
     target, found = select_object_by_index_or_best(project, object_name, object_index)
     old_basic = object_basic_info(target)
     target.rename(new_name)
-
     result = {
         "old_name": object_name,
         "new_name": new_name,
@@ -1375,13 +1549,11 @@ def rename_object(project, project_path, command):
         "old_object": old_basic,
         "renamed_object": object_basic_info(target),
         "backup_path": backup_path,
-        "saved": False
+        "saved": False,
     }
-
     if save_after:
         result["save"] = save_project(project)
         result["saved"] = True
-
     return result
 
 
@@ -1390,37 +1562,30 @@ def delete_object(project, project_path, command):
     object_index = command.get("object_index")
     save_after = bool(command.get("save_after", True))
     backup_before_delete = bool(command.get("backup_before_delete", True))
-
     if not object_name:
         raise Exception("object_name is required")
-
     backup_path = None
-
     if backup_before_delete:
         backup_path = make_backup(project_path)
-
     target, found = select_object_by_index_or_best(project, object_name, object_index)
     old_basic = object_basic_info(target)
     target.remove()
-
     result = {
         "deleted_name": object_name,
         "found_count": len(found),
         "deleted_object": old_basic,
         "backup_path": backup_path,
-        "saved": False
+        "saved": False,
     }
-
     if save_after:
         result["save"] = save_project(project)
         result["saved"] = True
-
     return result
 
 
 def diagnose_system():
     result = {"python_version": safe_str(sys.version), "globals": {}}
-    for name in ["projects", "system", "VersionUpdateFlags", "PouType", "Guid"]:
+    for name in ["projects", "system", "VersionUpdateFlags", "PouType", "DutType", "Guid"]:
         try:
             obj = globals()[name]
             result["globals"][name] = {"available": True, "object": safe_str(obj)}
@@ -1436,7 +1601,6 @@ def diagnose_system():
 def handle(command):
     action = command.get("action")
     project_path = command.get("project_path")
-
     debug_log("")
     debug_log("========== COMMAND START ==========")
     debug_log("command_id: " + safe_str(command.get("command_id")))
@@ -1455,35 +1619,25 @@ def handle(command):
     if action == "create_project":
         result = create_project_compat(
             project_path=project_path,
-            overwrite=bool(command.get("overwrite", False))
+            overwrite=bool(command.get("overwrite", False)),
         )
         return {"ok": True, "action": action, "project_path": project_path, "result": result}
 
     project = open_project_cached(project_path)
 
     if action == "open_project":
-        return {
-            "ok": True,
-            "action": action,
-            "project_path": project_path,
-            "project": project_info(project, project_path)
-        }
+        return {"ok": True, "action": action, "project_path": project_path, "project": project_info(project, project_path)}
 
     if action == "close_project":
         result = close_project_compat(
             project=project,
             project_path=project_path,
-            save_before_close=bool(command.get("save_before_close", False))
+            save_before_close=bool(command.get("save_before_close", False)),
         )
         return {"ok": True, "action": action, "project_path": project_path, "result": result}
 
     if action == "get_project_info":
-        return {
-            "ok": True,
-            "action": action,
-            "project_path": project_path,
-            "project": project_info(project, project_path)
-        }
+        return {"ok": True, "action": action, "project_path": project_path, "project": project_info(project, project_path)}
 
     if action == "find_object":
         object_name = command.get("object_name")
@@ -1499,7 +1653,7 @@ def handle(command):
             "project_path": project_path,
             "object_name": object_name,
             "found_count": len(found),
-            "objects": items
+            "objects": items,
         }
 
     if action == "get_object_info":
@@ -1514,7 +1668,7 @@ def handle(command):
             "project_path": project_path,
             "object_name": object_name,
             "found_count": len(found),
-            "selected_object": object_basic_info(target)
+            "selected_object": object_basic_info(target),
         }
 
     if action == "read_object":
@@ -1534,7 +1688,17 @@ def handle(command):
             "object_name": object_name,
             "found_count": len(found),
             "found_objects": found_items,
-            "selected_object": object_info(target, include_text)
+            "selected_object": object_info(target, include_text),
+        }
+
+    if action == "read_current_programs":
+        include_text = bool(command.get("include_text", True))
+        max_nodes = int(command.get("max_nodes", 300))
+        return {
+            "ok": True,
+            "action": action,
+            "project_path": project_path,
+            "programs": read_current_programs(project, include_text, max_nodes),
         }
 
     if action == "write_declaration":
@@ -1547,7 +1711,7 @@ def handle(command):
             object_index=command.get("object_index"),
             save_after=bool(command.get("save_after", True)),
             build_after=bool(command.get("build_after", False)),
-            backup_before_write=bool(command.get("backup_before_write", True))
+            backup_before_write=bool(command.get("backup_before_write", True)),
         )
         return {"ok": True, "action": action, "project_path": project_path, "result": result}
 
@@ -1561,7 +1725,7 @@ def handle(command):
             object_index=command.get("object_index"),
             save_after=bool(command.get("save_after", True)),
             build_after=bool(command.get("build_after", False)),
-            backup_before_write=bool(command.get("backup_before_write", True))
+            backup_before_write=bool(command.get("backup_before_write", True)),
         )
         return {"ok": True, "action": action, "project_path": project_path, "result": result}
 
@@ -1580,7 +1744,6 @@ def handle(command):
     if action == "create_gvl":
         result = create_gvl_object(project, project_path, command)
         return {"ok": True, "action": action, "project_path": project_path, "result": result}
-
 
     if action == "create_method":
         result = create_member_object(project, project_path, command, "method")
@@ -1619,29 +1782,20 @@ def handle(command):
         return {"ok": True, "action": action, "project_path": project_path, "result": result}
 
     if action == "save_project":
-        return {
-            "ok": True,
-            "action": action,
-            "project_path": project_path,
-            "save": save_project(project)
-        }
+        return {"ok": True, "action": action, "project_path": project_path, "save": save_project(project)}
 
     if action == "build_project":
         include_messages = bool(command.get("include_messages", True))
+        clear_messages_before_build = bool(command.get("clear_messages_before_build", True))
         return {
             "ok": True,
             "action": action,
             "project_path": project_path,
-            "build": build_project(project, include_messages)
+            "build": build_project(project, include_messages, clear_messages_before_build),
         }
 
     if action == "get_messages":
-        return {
-            "ok": True,
-            "action": action,
-            "project_path": project_path,
-            "messages": collect_messages()
-        }
+        return {"ok": True, "action": action, "project_path": project_path, "messages": collect_messages()}
 
     if action == "get_project_tree":
         max_depth = int(command.get("max_depth", 1))
@@ -1651,7 +1805,7 @@ def handle(command):
             "ok": True,
             "action": action,
             "project_path": project_path,
-            "tree_result": get_project_tree(project, max_depth, max_nodes, include_capabilities)
+            "tree_result": get_project_tree(project, max_depth, max_nodes, include_capabilities),
         }
 
     raise Exception("Unknown action: " + safe_str(action))
@@ -1675,7 +1829,6 @@ def process_request_file(request_path):
     processing_path = os.path.join(PROCESSING_DIR, os.path.basename(request_path))
     archive_path = os.path.join(ARCHIVE_DIR, os.path.basename(request_path))
     result_path = os.path.join(RESULT_DIR, command_id + ".json")
-
     try:
         if os.path.exists(processing_path):
             os.remove(processing_path)
@@ -1683,7 +1836,6 @@ def process_request_file(request_path):
     except Exception as e:
         debug_log("cannot move request to processing: " + safe_str(e))
         return False
-
     try:
         debug_log("processing request: " + processing_path)
         command = read_json(processing_path)
@@ -1708,7 +1860,7 @@ def process_request_file(request_path):
             "ok": False,
             "command_id": command_id,
             "error": safe_str(e),
-            "traceback": traceback.format_exc()
+            "traceback": traceback.format_exc(),
         }
         try:
             write_json_atomic(result_path, error_result)
@@ -1732,31 +1884,25 @@ def get_request_files_safe():
 def main_loop():
     ensure_bridge_dirs()
     touch_ready_file()
-
     debug_log("")
     debug_log("========================================")
     debug_log("InoProShop MCP persistent bridge START")
     debug_log("Python version: " + safe_str(sys.version))
     debug_log("BRIDGE_ROOT: " + BRIDGE_ROOT)
     debug_log("========================================")
-
     print("INOPROSHOP_MCP_BRIDGE_READY")
-
     while True:
         touch_ready_file()
         request_files = get_request_files_safe()
-
         if len(request_files) == 0:
             time.sleep(POLL_INTERVAL_SEC)
             continue
-
         for request_path in request_files:
             stop = process_request_file(request_path)
             if stop:
                 debug_log("stop_bridge requested")
                 debug_log("InoProShop MCP persistent bridge STOP")
                 return
-
         time.sleep(POLL_INTERVAL_SEC)
 
 

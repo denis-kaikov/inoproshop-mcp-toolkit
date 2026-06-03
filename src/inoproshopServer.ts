@@ -4,7 +4,7 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { runInoProShopCommand, PatchOperation } from "./inoproshopRunner";
+import { runInoProShopCommand, type PatchOperation } from "./inoproshopRunner";
 import {
   getBridgeStatus,
   startBridge,
@@ -20,23 +20,16 @@ import {
   setActiveProjectFromCreatedPath,
 } from "./inoproshopProjectManager";
 
-const DEFAULT_PROJECT_PATH =
-  process.env.INOPROSHOP_PROJECT ||
-  "C:\\Users\\kaykov\\Desktop\\Avanpost\\PLC\\PLC.project";
-
 const DEFAULT_TIMEOUT_MS = Number(
-  process.env.CODESYS_TIMEOUT_MS ||
-    process.env.INOPROSHOP_TIMEOUT_MS ||
-    "180000"
+  process.env.CODESYS_TIMEOUT_MS || process.env.INOPROSHOP_TIMEOUT_MS || "180000"
 );
-
 const DEFAULT_BRIDGE_DIR =
   process.env.INOPROSHOP_BRIDGE_DIR || "C:\\Temp\\inoproshop-mcp-bridge";
 
 const server = new Server(
   {
     name: "inoproshop-sp11-mcp",
-    version: "0.6.0",
+    version: "0.6.1",
   },
   {
     capabilities: {
@@ -58,45 +51,36 @@ function jsonText(value: unknown) {
 
 function getStringArg(args: any, name: string, fallback?: string): string {
   const value = args && args[name];
-
   if (typeof value === "string" && value.length > 0) {
     return value;
   }
-
   if (fallback !== undefined) {
     return fallback;
   }
-
   throw new Error("Missing required string argument: " + name);
 }
 
 function getOptionalStringArg(args: any, name: string): string | undefined {
   const value = args && args[name];
-
   if (typeof value === "string") {
     return value;
   }
-
   return undefined;
 }
 
 function getOptionalNumberArg(args: any, name: string): number | undefined {
   const value = args && args[name];
-
   if (typeof value === "number") {
     return value;
   }
-
   return undefined;
 }
 
 function getBooleanArg(args: any, name: string, fallback: boolean): boolean {
   const value = args && args[name];
-
   if (typeof value === "boolean") {
     return value;
   }
-
   return fallback;
 }
 
@@ -109,7 +93,6 @@ function commonOptions(timeoutMs?: number) {
 
 async function requireBridgeActive() {
   const status = await getBridgeStatus({ bridgeDir: DEFAULT_BRIDGE_DIR });
-
   if (!status.active) {
     throw new Error(
       [
@@ -120,7 +103,6 @@ async function requireBridgeActive() {
       ].join("\n")
     );
   }
-
   return status;
 }
 
@@ -158,6 +140,36 @@ function backupCreateOptions(args: any) {
   };
 }
 
+function extractCompileMessages(bridgeResult: any) {
+  const build = bridgeResult && bridgeResult.build ? bridgeResult.build : undefined;
+  const messages =
+    build && build.messages
+      ? build.messages
+      : bridgeResult && bridgeResult.messages
+        ? bridgeResult.messages
+        : {};
+  const errors = messages && Array.isArray(messages.errors) ? messages.errors : [];
+  const warnings = messages && Array.isArray(messages.warnings) ? messages.warnings : [];
+  return {
+    compile_error_count:
+      typeof messages.error_count === "number"
+        ? messages.error_count
+        : typeof build?.compile_error_count === "number"
+          ? build.compile_error_count
+          : errors.length,
+    compile_warning_count:
+      typeof messages.warning_count === "number"
+        ? messages.warning_count
+        : typeof build?.compile_warning_count === "number"
+          ? build.compile_warning_count
+          : warnings.length,
+    compile_errors: errors,
+    compile_warnings: warnings,
+    all_messages_count: typeof messages.count === "number" ? messages.count : undefined,
+    message_diagnostics: messages ? messages.diagnostics : undefined,
+  };
+}
+
 server.setRequestHandler(ListToolsRequestSchema, async function () {
   return {
     tools: [
@@ -171,9 +183,7 @@ server.setRequestHandler(ListToolsRequestSchema, async function () {
         description: "Start one persistent InoProShop window with the MCP bridge script.",
         inputSchema: {
           type: "object",
-          properties: {
-            timeout_ms: { type: "number", default: 30000 },
-          },
+          properties: { timeout_ms: { type: "number", default: 30000 } },
           required: [],
         },
       },
@@ -182,9 +192,7 @@ server.setRequestHandler(ListToolsRequestSchema, async function () {
         description: "Stop the persistent InoProShop bridge by sending stop_bridge command.",
         inputSchema: {
           type: "object",
-          properties: {
-            timeout_ms: { type: "number", default: 15000 },
-          },
+          properties: { timeout_ms: { type: "number", default: 15000 } },
           required: [],
         },
       },
@@ -201,7 +209,7 @@ server.setRequestHandler(ListToolsRequestSchema, async function () {
           properties: {
             project_path: { type: "string", description: "Full path to a .project file." },
             project_folder: { type: "string", description: "Folder containing exactly one .project file." },
-            name: { type: "string", description: "Optional human-readable project name." }
+            name: { type: "string", description: "Optional human-readable project name." },
           },
           required: [],
         },
@@ -220,7 +228,7 @@ server.setRequestHandler(ListToolsRequestSchema, async function () {
             root: { type: "string", description: "Root folder to search. Defaults to current user's Desktop." },
             recursive: { type: "boolean", default: true },
             max_depth: { type: "number", default: 4 },
-            max_results: { type: "number", default: 100 }
+            max_results: { type: "number", default: 100 },
           },
           required: [],
         },
@@ -233,7 +241,7 @@ server.setRequestHandler(ListToolsRequestSchema, async function () {
           properties: {
             project_path: { type: "string", description: "Full path to a .project file." },
             project_folder: { type: "string", description: "Folder containing exactly one .project file." },
-            name: { type: "string", description: "Optional human-readable project name." }
+            name: { type: "string", description: "Optional human-readable project name." },
           },
           required: [],
         },
@@ -248,7 +256,7 @@ server.setRequestHandler(ListToolsRequestSchema, async function () {
             project_folder: { type: "string", description: "Target folder. Used with project_file_name when project_path is omitted." },
             project_file_name: { type: "string", default: "PLC.project" },
             name: { type: "string", description: "Optional human-readable project name." },
-            overwrite: { type: "boolean", default: false }
+            overwrite: { type: "boolean", default: false },
           },
           required: [],
         },
@@ -261,7 +269,7 @@ server.setRequestHandler(ListToolsRequestSchema, async function () {
           properties: {
             project_path: { type: "string" },
             project_folder: { type: "string" },
-            save_before_close: { type: "boolean", default: false }
+            save_before_close: { type: "boolean", default: false },
           },
           required: [],
         },
@@ -274,11 +282,7 @@ server.setRequestHandler(ListToolsRequestSchema, async function () {
       {
         name: "inoproshop_get_project_info",
         description: "Open or reuse the InoProShop project and return basic project/application information.",
-        inputSchema: {
-          type: "object",
-          properties: { project_path: { type: "string" } },
-          required: [],
-        },
+        inputSchema: { type: "object", properties: { project_path: { type: "string" } }, required: [] },
       },
       {
         name: "inoproshop_find_object",
@@ -307,16 +311,29 @@ server.setRequestHandler(ListToolsRequestSchema, async function () {
       },
       {
         name: "inoproshop_read_object",
-        description: "Read declaration and/or implementation of an InoProShop/CODESYS SP11 object by name.",
+        description: "Read declaration and/or ST implementation of one InoProShop/CODESYS SP11 object by exact name. Use this before modifying PLC code.",
         inputSchema: {
           type: "object",
           properties: {
-            project_path: { type: "string" },
-            object_name: { type: "string" },
-            object_index: { type: "number" },
-            include_text: { type: "boolean", default: true },
+            project_path: { type: "string", description: "Full path to the .project file. If omitted, the active project context is used." },
+            object_name: { type: "string", description: "Exact object name searched with project.find(name, True)." },
+            object_index: { type: "number", description: "Zero-based index when several objects have the same name." },
+            include_text: { type: "boolean", default: true, description: "Return full declaration/implementation text when true; otherwise return previews." },
           },
           required: ["object_name"],
+        },
+      },
+      {
+        name: "inoproshop_read_current_programs",
+        description: "Scan the active Application and return all textual PLC objects currently visible in the project, including Programs, Function Blocks, Functions, GVLs, DUTs, methods, properties, actions, and transitions when SP11 exposes textual_declaration/textual_implementation.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            project_path: { type: "string", description: "Full path to the .project file. If omitted, the active project context is used." },
+            include_text: { type: "boolean", default: true, description: "Return full declaration/implementation text for each textual object." },
+            max_nodes: { type: "number", default: 300, description: "Maximum tree nodes to visit to avoid slow scans on large OEM/SP11 projects." },
+          },
+          required: [],
         },
       },
       {
@@ -607,20 +624,40 @@ server.setRequestHandler(ListToolsRequestSchema, async function () {
       },
       {
         name: "inoproshop_build_project",
-        description: "Build active Application in InoProShop/CODESYS SP11 and optionally try to collect messages.",
+        description: "Build the active Application in InoProShop/CODESYS SP11. By default clears old system messages before the build and returns parsed compile/build errors and warnings from the SP11 message API.",
         inputSchema: {
           type: "object",
           properties: {
-            project_path: { type: "string" },
-            include_messages: { type: "boolean", default: true },
+            project_path: { type: "string", description: "Full path to the .project file. If omitted, the active project context is used." },
+            include_messages: { type: "boolean", default: true, description: "Collect system/build messages after build and split them into errors, warnings, and infos." },
+            clear_messages_before_build: { type: "boolean", default: true, description: "Call system.clear_messages() before build so stale compile errors are not returned." },
+          },
+          required: [],
+        },
+      },
+      {
+        name: "inoproshop_get_compile_errors",
+        description: "Return compile/build errors in a compact MCP-friendly shape. By default performs a fresh build first, clears stale messages, then returns only parsed errors plus warnings.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            project_path: { type: "string", description: "Full path to the .project file. If omitted, the active project context is used." },
+            build_first: { type: "boolean", default: true, description: "Run inoproshop_build_project first. Set false to only read the current message buffer." },
+            clear_messages_before_build: { type: "boolean", default: true, description: "When build_first is true, clear old messages before compiling." },
           },
           required: [],
         },
       },
       {
         name: "inoproshop_get_messages",
-        description: "Try to collect CODESYS/InoProShop system messages.",
-        inputSchema: { type: "object", properties: { project_path: { type: "string" } }, required: [] },
+        description: "Read the current CODESYS/InoProShop SP11 system message buffer and return messages grouped as errors, warnings, and infos. Use build_project or get_compile_errors for fresh compile diagnostics.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            project_path: { type: "string", description: "Full path to the .project file. If omitted, the active project context is used." },
+          },
+          required: [],
+        },
       },
       {
         name: "inoproshop_get_project_tree",
@@ -686,12 +723,7 @@ server.setRequestHandler(CallToolRequestSchema, async function (request) {
       },
       DEFAULT_BRIDGE_DIR
     );
-
-    return jsonText({
-      ok: true,
-      action: "set_project",
-      active_project: activeProject,
-    });
+    return jsonText({ ok: true, action: "set_project", active_project: activeProject });
   }
 
   if (toolName === "inoproshop_clear_project") {
@@ -699,24 +731,14 @@ server.setRequestHandler(CallToolRequestSchema, async function (request) {
   }
 
   if (toolName === "inoproshop_list_projects") {
-    const root =
-      getOptionalStringArg(args, "root") ||
-      process.env.USERPROFILE + "\\Desktop";
-
+    const root = getOptionalStringArg(args, "root") || process.env.USERPROFILE + "\\Desktop";
     const projects = await listProjects(
       root,
       getBooleanArg(args, "recursive", true),
       getOptionalNumberArg(args, "max_depth") || 4,
       getOptionalNumberArg(args, "max_results") || 100
     );
-
-    return jsonText({
-      ok: true,
-      action: "list_projects",
-      root,
-      count: projects.length,
-      projects,
-    });
+    return jsonText({ ok: true, action: "list_projects", root, count: projects.length, projects });
   }
 
   await requireBridgeActive();
@@ -730,62 +752,42 @@ server.setRequestHandler(CallToolRequestSchema, async function (request) {
       },
       DEFAULT_BRIDGE_DIR
     );
-
     const result = await runInoProShopCommand(
-      {
-        action: "open_project",
-        project_path: activeProject.project_path,
-      },
+      { action: "open_project", project_path: activeProject.project_path },
       commonOptions()
     );
-
-    return jsonText({
-      ok: true,
-      action: "open_project",
-      active_project: activeProject,
-      result,
-    });
+    return jsonText({ ok: true, action: "open_project", active_project: activeProject, result });
   }
 
   if (toolName === "inoproshop_create_project") {
     const explicitPath = getOptionalStringArg(args, "project_path");
     const projectFolder = getOptionalStringArg(args, "project_folder");
-    const projectPath = explicitPath || (
-      projectFolder
+    const newProjectPath =
+      explicitPath ||
+      (projectFolder
         ? buildProjectPathFromFolder(projectFolder, getOptionalStringArg(args, "project_file_name"))
-        : undefined
-    );
-
-    if (!projectPath) {
+        : undefined);
+    if (!newProjectPath) {
       throw new Error("Either project_path or project_folder is required.");
     }
-
     const result = await runInoProShopCommand(
       {
         action: "create_project",
-        project_path: projectPath,
+        project_path: newProjectPath,
         overwrite: getBooleanArg(args, "overwrite", false),
       },
       commonOptions()
     );
-
     const activeProject = await setActiveProjectFromCreatedPath(
-      projectPath,
+      newProjectPath,
       getOptionalStringArg(args, "name"),
       DEFAULT_BRIDGE_DIR
     );
-
-    return jsonText({
-      ok: true,
-      action: "create_project",
-      active_project: activeProject,
-      result,
-    });
+    return jsonText({ ok: true, action: "create_project", active_project: activeProject, result });
   }
 
   if (toolName === "inoproshop_close_project") {
     const effectiveProjectPath = await projectPath(args);
-
     const result = await runInoProShopCommand(
       {
         action: "close_project",
@@ -794,21 +796,13 @@ server.setRequestHandler(CallToolRequestSchema, async function (request) {
       },
       commonOptions()
     );
-
     const active = await getActiveProject(DEFAULT_BRIDGE_DIR);
     let cleared = false;
-
     if (active && active.project_path.toLowerCase() === effectiveProjectPath.toLowerCase()) {
       await clearActiveProject(DEFAULT_BRIDGE_DIR);
       cleared = true;
     }
-
-    return jsonText({
-      ok: true,
-      action: "close_project",
-      cleared_active_project: cleared,
-      result,
-    });
+    return jsonText({ ok: true, action: "close_project", cleared_active_project: cleared, result });
   }
 
   if (toolName === "inoproshop_diagnose_system") {
@@ -816,170 +810,334 @@ server.setRequestHandler(CallToolRequestSchema, async function (request) {
   }
 
   if (toolName === "inoproshop_get_project_info") {
-    return jsonText(await runInoProShopCommand({ action: "get_project_info", project_path: await projectPath(args) }, commonOptions()));
+    return jsonText(
+      await runInoProShopCommand(
+        { action: "get_project_info", project_path: await projectPath(args) },
+        commonOptions()
+      )
+    );
   }
 
   if (toolName === "inoproshop_find_object") {
-    return jsonText(await runInoProShopCommand({ action: "find_object", project_path: await projectPath(args), object_name: getStringArg(args, "object_name") }, commonOptions()));
+    return jsonText(
+      await runInoProShopCommand(
+        {
+          action: "find_object",
+          project_path: await projectPath(args),
+          object_name: getStringArg(args, "object_name"),
+        },
+        commonOptions()
+      )
+    );
   }
 
   if (toolName === "inoproshop_get_object_info") {
-    return jsonText(await runInoProShopCommand({ action: "get_object_info", project_path: await projectPath(args), object_name: getStringArg(args, "object_name"), object_index: getOptionalNumberArg(args, "object_index") }, commonOptions()));
+    return jsonText(
+      await runInoProShopCommand(
+        {
+          action: "get_object_info",
+          project_path: await projectPath(args),
+          object_name: getStringArg(args, "object_name"),
+          object_index: getOptionalNumberArg(args, "object_index"),
+        },
+        commonOptions()
+      )
+    );
   }
 
   if (toolName === "inoproshop_read_object") {
-    return jsonText(await runInoProShopCommand({ action: "read_object", project_path: await projectPath(args), object_name: getStringArg(args, "object_name"), object_index: getOptionalNumberArg(args, "object_index"), include_text: getBooleanArg(args, "include_text", true) }, commonOptions()));
+    return jsonText(
+      await runInoProShopCommand(
+        {
+          action: "read_object",
+          project_path: await projectPath(args),
+          object_name: getStringArg(args, "object_name"),
+          object_index: getOptionalNumberArg(args, "object_index"),
+          include_text: getBooleanArg(args, "include_text", true),
+        },
+        commonOptions()
+      )
+    );
+  }
+
+  if (toolName === "inoproshop_read_current_programs") {
+    return jsonText(
+      await runInoProShopCommand(
+        {
+          action: "read_current_programs",
+          project_path: await projectPath(args),
+          include_text: getBooleanArg(args, "include_text", true),
+          max_nodes: getOptionalNumberArg(args, "max_nodes") || 300,
+        },
+        commonOptions()
+      )
+    );
   }
 
   if (toolName === "inoproshop_write_declaration" || toolName === "inoproshop_write_implementation") {
-    return jsonText(await runInoProShopCommand({
-      action: toolName === "inoproshop_write_declaration" ? "write_declaration" : "write_implementation",
-      project_path: await projectPath(args),
-      object_name: getStringArg(args, "object_name"),
-      object_index: getOptionalNumberArg(args, "object_index"),
-      text: getStringArg(args, "text"),
-      ...backupWriteOptions(args),
-    } as any, commonOptions()));
+    return jsonText(
+      await runInoProShopCommand(
+        {
+          action: toolName === "inoproshop_write_declaration" ? "write_declaration" : "write_implementation",
+          project_path: await projectPath(args),
+          object_name: getStringArg(args, "object_name"),
+          object_index: getOptionalNumberArg(args, "object_index"),
+          text: getStringArg(args, "text"),
+          ...backupWriteOptions(args),
+        } as any,
+        commonOptions()
+      )
+    );
   }
 
   if (toolName === "inoproshop_patch_declaration" || toolName === "inoproshop_patch_implementation") {
-    return jsonText(await runInoProShopCommand({
-      action: toolName === "inoproshop_patch_declaration" ? "patch_declaration" : "patch_implementation",
-      project_path: await projectPath(args),
-      object_name: getStringArg(args, "object_name"),
-      object_index: getOptionalNumberArg(args, "object_index"),
-      operation: getStringArg(args, "operation") as PatchOperation,
-      text: getOptionalStringArg(args, "text"),
-      search_text: getOptionalStringArg(args, "search_text"),
-      replace_text: getOptionalStringArg(args, "replace_text"),
-      replace_all: getBooleanArg(args, "replace_all", false),
-      anchor: getOptionalStringArg(args, "anchor"),
-      start_marker: getOptionalStringArg(args, "start_marker"),
-      end_marker: getOptionalStringArg(args, "end_marker"),
-      create_if_missing: getBooleanArg(args, "create_if_missing", false),
-      ...backupWriteOptions(args),
-    } as any, commonOptions()));
+    return jsonText(
+      await runInoProShopCommand(
+        {
+          action: toolName === "inoproshop_patch_declaration" ? "patch_declaration" : "patch_implementation",
+          project_path: await projectPath(args),
+          object_name: getStringArg(args, "object_name"),
+          object_index: getOptionalNumberArg(args, "object_index"),
+          operation: getStringArg(args, "operation") as PatchOperation,
+          text: getOptionalStringArg(args, "text"),
+          search_text: getOptionalStringArg(args, "search_text"),
+          replace_text: getOptionalStringArg(args, "replace_text"),
+          replace_all: getBooleanArg(args, "replace_all", false),
+          anchor: getOptionalStringArg(args, "anchor"),
+          start_marker: getOptionalStringArg(args, "start_marker"),
+          end_marker: getOptionalStringArg(args, "end_marker"),
+          create_if_missing: getBooleanArg(args, "create_if_missing", false),
+          ...backupWriteOptions(args),
+        } as any,
+        commonOptions()
+      )
+    );
   }
 
   if (toolName === "inoproshop_create_pou") {
-    return jsonText(await runInoProShopCommand({
-      action: "create_pou",
-      project_path: await projectPath(args),
-      parent_name: getOptionalStringArg(args, "parent_name"),
-      name: getStringArg(args, "name"),
-      pou_type: getStringArg(args, "pou_type", "function_block") as "program" | "function_block" | "function",
-      return_type: getOptionalStringArg(args, "return_type"),
-      declaration: getOptionalStringArg(args, "declaration"),
-      implementation: getOptionalStringArg(args, "implementation"),
-      ...backupCreateOptions(args),
-    }, commonOptions()));
+    return jsonText(
+      await runInoProShopCommand(
+        {
+          action: "create_pou",
+          project_path: await projectPath(args),
+          parent_name: getOptionalStringArg(args, "parent_name"),
+          name: getStringArg(args, "name"),
+          pou_type: getStringArg(args, "pou_type", "function_block") as "program" | "function_block" | "function",
+          return_type: getOptionalStringArg(args, "return_type"),
+          declaration: getOptionalStringArg(args, "declaration"),
+          implementation: getOptionalStringArg(args, "implementation"),
+          ...backupCreateOptions(args),
+        },
+        commonOptions()
+      )
+    );
   }
 
   if (toolName === "inoproshop_create_gvl") {
-    return jsonText(await runInoProShopCommand({
-      action: "create_gvl",
-      project_path: await projectPath(args),
-      parent_name: getOptionalStringArg(args, "parent_name"),
-      name: getStringArg(args, "name"),
-      declaration: getOptionalStringArg(args, "declaration"),
-      ...backupCreateOptions(args),
-    }, commonOptions()));
+    return jsonText(
+      await runInoProShopCommand(
+        {
+          action: "create_gvl",
+          project_path: await projectPath(args),
+          parent_name: getOptionalStringArg(args, "parent_name"),
+          name: getStringArg(args, "name"),
+          declaration: getOptionalStringArg(args, "declaration"),
+          ...backupCreateOptions(args),
+        },
+        commonOptions()
+      )
+    );
   }
 
-  if (toolName === "inoproshop_create_method" || toolName === "inoproshop_create_property" || toolName === "inoproshop_create_action" || toolName === "inoproshop_create_transition") {
-    const actionMap: Record<string, "create_method" | "create_property" | "create_action" | "create_transition"> = {
+  if (
+    toolName === "inoproshop_create_method" ||
+    toolName === "inoproshop_create_property" ||
+    toolName === "inoproshop_create_action" ||
+    toolName === "inoproshop_create_transition"
+  ) {
+    const actionMap: Record<string, string> = {
       inoproshop_create_method: "create_method",
       inoproshop_create_property: "create_property",
       inoproshop_create_action: "create_action",
       inoproshop_create_transition: "create_transition",
     };
-
-    return jsonText(await runInoProShopCommand({
-      action: actionMap[toolName],
-      project_path: await projectPath(args),
-      parent_name: getStringArg(args, "parent_name"),
-      parent_index: getOptionalNumberArg(args, "parent_index"),
-      name: getStringArg(args, "name"),
-      return_type: getOptionalStringArg(args, "return_type"),
-      property_type: getOptionalStringArg(args, "property_type"),
-      declaration: getOptionalStringArg(args, "declaration"),
-      implementation: getOptionalStringArg(args, "implementation"),
-      ...backupCreateOptions(args),
-    } as any, commonOptions()));
+    return jsonText(
+      await runInoProShopCommand(
+        {
+          action: actionMap[toolName],
+          project_path: await projectPath(args),
+          parent_name: getStringArg(args, "parent_name"),
+          parent_index: getOptionalNumberArg(args, "parent_index"),
+          name: getStringArg(args, "name"),
+          return_type: getOptionalStringArg(args, "return_type"),
+          property_type: getOptionalStringArg(args, "property_type"),
+          declaration: getOptionalStringArg(args, "declaration"),
+          implementation: getOptionalStringArg(args, "implementation"),
+          ...backupCreateOptions(args),
+        } as any,
+        commonOptions()
+      )
+    );
   }
 
   if (toolName === "inoproshop_create_dut") {
-    return jsonText(await runInoProShopCommand({
-      action: "create_dut",
-      project_path: await projectPath(args),
-      parent_name: getOptionalStringArg(args, "parent_name"),
-      name: getStringArg(args, "name"),
-      dut_type: getOptionalStringArg(args, "dut_type") as any,
-      base_type: getOptionalStringArg(args, "base_type"),
-      declaration: getOptionalStringArg(args, "declaration"),
-      ...backupCreateOptions(args),
-    } as any, commonOptions()));
+    return jsonText(
+      await runInoProShopCommand(
+        {
+          action: "create_dut",
+          project_path: await projectPath(args),
+          parent_name: getOptionalStringArg(args, "parent_name"),
+          name: getStringArg(args, "name"),
+          dut_type: getOptionalStringArg(args, "dut_type") as any,
+          base_type: getOptionalStringArg(args, "base_type"),
+          declaration: getOptionalStringArg(args, "declaration"),
+          ...backupCreateOptions(args),
+        } as any,
+        commonOptions()
+      )
+    );
   }
 
   if (toolName === "inoproshop_create_interface") {
-    return jsonText(await runInoProShopCommand({
-      action: "create_interface",
-      project_path: await projectPath(args),
-      parent_name: getOptionalStringArg(args, "parent_name"),
-      name: getStringArg(args, "name"),
-      declaration: getOptionalStringArg(args, "declaration"),
-      ...backupCreateOptions(args),
-    }, commonOptions()));
+    return jsonText(
+      await runInoProShopCommand(
+        {
+          action: "create_interface",
+          project_path: await projectPath(args),
+          parent_name: getOptionalStringArg(args, "parent_name"),
+          name: getStringArg(args, "name"),
+          declaration: getOptionalStringArg(args, "declaration"),
+          ...backupCreateOptions(args),
+        },
+        commonOptions()
+      )
+    );
   }
 
   if (toolName === "inoproshop_create_folder") {
-    return jsonText(await runInoProShopCommand({
-      action: "create_folder",
-      project_path: await projectPath(args),
-      parent_name: getOptionalStringArg(args, "parent_name"),
-      name: getStringArg(args, "name"),
-      save_after: getBooleanArg(args, "save_after", true),
-      backup_before_create: getBooleanArg(args, "backup_before_create", true),
-    }, commonOptions()));
+    return jsonText(
+      await runInoProShopCommand(
+        {
+          action: "create_folder",
+          project_path: await projectPath(args),
+          parent_name: getOptionalStringArg(args, "parent_name"),
+          name: getStringArg(args, "name"),
+          save_after: getBooleanArg(args, "save_after", true),
+          backup_before_create: getBooleanArg(args, "backup_before_create", true),
+        },
+        commonOptions()
+      )
+    );
   }
 
   if (toolName === "inoproshop_rename_object") {
-    return jsonText(await runInoProShopCommand({
-      action: "rename_object",
-      project_path: await projectPath(args),
-      object_name: getStringArg(args, "object_name"),
-      object_index: getOptionalNumberArg(args, "object_index"),
-      new_name: getStringArg(args, "new_name"),
-      save_after: getBooleanArg(args, "save_after", true),
-      backup_before_rename: getBooleanArg(args, "backup_before_rename", true),
-    }, commonOptions()));
+    return jsonText(
+      await runInoProShopCommand(
+        {
+          action: "rename_object",
+          project_path: await projectPath(args),
+          object_name: getStringArg(args, "object_name"),
+          object_index: getOptionalNumberArg(args, "object_index"),
+          new_name: getStringArg(args, "new_name"),
+          save_after: getBooleanArg(args, "save_after", true),
+          backup_before_rename: getBooleanArg(args, "backup_before_rename", true),
+        },
+        commonOptions()
+      )
+    );
   }
 
   if (toolName === "inoproshop_delete_object") {
-    return jsonText(await runInoProShopCommand({
-      action: "delete_object",
-      project_path: await projectPath(args),
-      object_name: getStringArg(args, "object_name"),
-      object_index: getOptionalNumberArg(args, "object_index"),
-      save_after: getBooleanArg(args, "save_after", true),
-      backup_before_delete: getBooleanArg(args, "backup_before_delete", true),
-    }, commonOptions()));
+    return jsonText(
+      await runInoProShopCommand(
+        {
+          action: "delete_object",
+          project_path: await projectPath(args),
+          object_name: getStringArg(args, "object_name"),
+          object_index: getOptionalNumberArg(args, "object_index"),
+          save_after: getBooleanArg(args, "save_after", true),
+          backup_before_delete: getBooleanArg(args, "backup_before_delete", true),
+        },
+        commonOptions()
+      )
+    );
   }
 
   if (toolName === "inoproshop_save_project") {
-    return jsonText(await runInoProShopCommand({ action: "save_project", project_path: await projectPath(args) }, commonOptions()));
+    return jsonText(
+      await runInoProShopCommand(
+        { action: "save_project", project_path: await projectPath(args) },
+        commonOptions()
+      )
+    );
   }
 
   if (toolName === "inoproshop_build_project") {
-    return jsonText(await runInoProShopCommand({ action: "build_project", project_path: await projectPath(args), include_messages: getBooleanArg(args, "include_messages", true) }, commonOptions()));
+    return jsonText(
+      await runInoProShopCommand(
+        {
+          action: "build_project",
+          project_path: await projectPath(args),
+          include_messages: getBooleanArg(args, "include_messages", true),
+          clear_messages_before_build: getBooleanArg(args, "clear_messages_before_build", true),
+        },
+        commonOptions()
+      )
+    );
+  }
+
+  if (toolName === "inoproshop_get_compile_errors") {
+    const effectiveProjectPath = await projectPath(args);
+    const buildFirst = getBooleanArg(args, "build_first", true);
+    const bridgeResult = buildFirst
+      ? await runInoProShopCommand(
+          {
+            action: "build_project",
+            project_path: effectiveProjectPath,
+            include_messages: true,
+            clear_messages_before_build: getBooleanArg(args, "clear_messages_before_build", true),
+          },
+          commonOptions()
+        )
+      : await runInoProShopCommand(
+          {
+            action: "get_messages",
+            project_path: effectiveProjectPath,
+          },
+          commonOptions()
+        );
+    return jsonText({
+      ok: true,
+      action: "get_compile_errors",
+      project_path: effectiveProjectPath,
+      build_first: buildFirst,
+      ...extractCompileMessages(bridgeResult),
+      source_result: bridgeResult,
+    });
   }
 
   if (toolName === "inoproshop_get_messages") {
-    return jsonText(await runInoProShopCommand({ action: "get_messages", project_path: await projectPath(args) }, commonOptions()));
+    return jsonText(
+      await runInoProShopCommand(
+        { action: "get_messages", project_path: await projectPath(args) },
+        commonOptions()
+      )
+    );
   }
 
   if (toolName === "inoproshop_get_project_tree") {
-    return jsonText(await runInoProShopCommand({ action: "get_project_tree", project_path: await projectPath(args), max_depth: getOptionalNumberArg(args, "max_depth") || 1, max_nodes: getOptionalNumberArg(args, "max_nodes") || 50, include_capabilities: getBooleanArg(args, "include_capabilities", false) }, commonOptions()));
+    return jsonText(
+      await runInoProShopCommand(
+        {
+          action: "get_project_tree",
+          project_path: await projectPath(args),
+          max_depth: getOptionalNumberArg(args, "max_depth") || 1,
+          max_nodes: getOptionalNumberArg(args, "max_nodes") || 50,
+          include_capabilities: getBooleanArg(args, "include_capabilities", false),
+        },
+        commonOptions()
+      )
+    );
   }
 
   throw new Error("Unknown tool: " + toolName);

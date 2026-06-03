@@ -1583,9 +1583,781 @@ def delete_object(project, project_path, command):
     return result
 
 
+
+def attr_value(obj, names):
+    for name in names:
+        try:
+            value = getattr(obj, name)
+            if callable(value):
+                try:
+                    value = value()
+                except TypeError:
+                    continue
+            if value is not None:
+                return value
+        except Exception:
+            pass
+    return None
+
+
+def safe_dir(obj, limit=250):
+    try:
+        items = [safe_str(x) for x in dir(obj)]
+        return items[:limit]
+    except Exception as e:
+        return ["<dir error: " + safe_str(e) + ">"]
+
+
+def public_scalar_attrs(obj, max_items=30):
+    result = {}
+    try:
+        names = dir(obj)
+    except Exception:
+        return result
+    skipped = set(["project", "parent", "children"])
+    for name in names:
+        if len(result) >= max_items:
+            break
+        if name.startswith("_") or name in skipped:
+            continue
+        try:
+            value = getattr(obj, name)
+            if callable(value):
+                continue
+            if value is None:
+                continue
+            if isinstance(value, bool):
+                result[safe_str(name)] = bool(value)
+                continue
+            try:
+                numeric_types = (int, long, float)
+            except NameError:
+                numeric_types = (int, float)
+            if isinstance(value, numeric_types) or is_string_like(value):
+                result[safe_str(name)] = compact_message_value(value)
+        except Exception:
+            pass
+    return result
+
+
+def library_ref_info(lib):
+    info = {"object": safe_str(lib)}
+    fields = [
+        ("name", ["name", "Name", "display_name", "DisplayName", "title", "Title", "get_name", "get_display_name"]),
+        ("version", ["version", "Version", "effective_version", "EffectiveVersion", "get_version"]),
+        ("company", ["company", "Company", "vendor", "Vendor", "provider", "Provider", "get_company", "get_vendor"]),
+        ("namespace", ["namespace", "Namespace", "default_namespace", "DefaultNamespace", "get_namespace"]),
+        ("placeholder", ["placeholder", "Placeholder", "placeholder_name", "PlaceholderName"]),
+        ("is_placeholder", ["is_placeholder", "IsPlaceholder"]),
+        ("category", ["category", "Category"]),
+        ("path", ["path", "Path", "file_path", "FilePath", "location", "Location"]),
+    ]
+    for key, names in fields:
+        value = attr_value(lib, names)
+        if value is not None:
+            info[key] = compact_message_value(value)
+    try:
+        deps = collection_to_list(lib.get_dependencies())
+        info["dependencies_count"] = len(deps)
+    except Exception:
+        pass
+    try:
+        info["parameters_count"] = len(lib.parameters)
+    except Exception:
+        pass
+    if "name" not in info:
+        extra = public_scalar_attrs(lib, 15)
+        if extra:
+            info["attrs"] = extra
+    return info
+
+
+def repository_entry_info(entry):
+    info = {"object": safe_str(entry)}
+    fields = [
+        ("name", ["name", "Name", "display_name", "DisplayName", "title", "Title", "get_name"]),
+        ("path", ["path", "Path", "location", "Location", "directory", "Directory"]),
+        ("enabled", ["enabled", "Enabled", "is_enabled", "IsEnabled"]),
+    ]
+    for key, names in fields:
+        value = attr_value(entry, names)
+        if value is not None:
+            info[key] = compact_message_value(value)
+    extra = public_scalar_attrs(entry, 10)
+    if extra:
+        info["attrs"] = extra
+    return info
+
+
+def category_info(category):
+    info = {"object": safe_str(category)}
+    fields = [
+        ("name", ["name", "Name", "display_name", "DisplayName", "title", "Title", "get_name"]),
+        ("description", ["description", "Description"]),
+    ]
+    for key, names in fields:
+        value = attr_value(category, names)
+        if value is not None:
+            info[key] = compact_message_value(value)
+    return info
+
+
+def library_matches(info, query):
+    if not query:
+        return True
+    q = to_unicode(query).lower()
+    text = u" ".join([to_unicode(v) for v in info.values() if v is not None]).lower()
+    return q in text
+
+
+def limit_items(items, max_results):
+    try:
+        max_results = int(max_results)
+    except Exception:
+        max_results = 100
+    if max_results <= 0:
+        max_results = 100
+    return items[:max_results]
+
+
+def object_has_repository_api(obj):
+    if obj is None:
+        return False
+    return (
+        has_attr_safe(obj, "get_all_libraries")
+        or has_attr_safe(obj, "find_library")
+        or has_attr_safe(obj, "get_library")
+        or has_attr_safe(obj, "repositories")
+        or has_attr_safe(obj, "categories")
+        or has_attr_safe(obj, "install_library")
+    )
+
+
+def get_global_object(name):
+    try:
+        return globals()[name]
+    except Exception:
+        return None
+
+
+def add_unique_manager(candidates, seen, obj, source):
+    if obj is None:
+        return
+    try:
+        key = str(id(obj))
+    except Exception:
+        key = safe_str(obj)
+    if key in seen:
+        return
+    seen.add(key)
+    candidates.append((obj, source))
+
+
+def get_repository_manager_candidates(project):
+    candidates = []
+    seen = set()
+
+    # In CODESYS/InoProShop scripting the installed library repository is usually
+    # exposed as a global ILibManager named librarymanager. project.library is kept
+    # as a fallback because some SP11 builds expose it there.
+    for name in ["librarymanager", "library_manager", "libmanager", "lib_manager", "LibraryManager"]:
+        obj = get_global_object(name)
+        if object_has_repository_api(obj):
+            add_unique_manager(candidates, seen, obj, "global." + name)
+
+    try:
+        obj = project.library
+        if object_has_repository_api(obj):
+            add_unique_manager(candidates, seen, obj, "project.library")
+    except Exception:
+        pass
+
+    try:
+        obj = projects.primary.library
+        if object_has_repository_api(obj):
+            add_unique_manager(candidates, seen, obj, "projects.primary.library")
+    except Exception:
+        pass
+
+    # Last-chance fallbacks. These usually are project Library Managers, not the
+    # repository ILibManager, but in OEM SP11 builds the naming is inconsistent.
+    for label, fn in [
+        ("project.get_library_manager()", lambda: project.get_library_manager()),
+        ("project.library_manager", lambda: project.library_manager),
+        ("active_application.library_manager", lambda: project.active_application.library_manager),
+        ("active_application.get_library_manager()", lambda: project.active_application.get_library_manager()),
+    ]:
+        try:
+            obj = fn()
+            if object_has_repository_api(obj):
+                add_unique_manager(candidates, seen, obj, label)
+        except Exception:
+            pass
+
+    return candidates
+
+
+def get_repository_manager(project):
+    candidates = get_repository_manager_candidates(project)
+    if candidates:
+        return candidates[0][0], candidates[0][1]
+    names = []
+    try:
+        names = [safe_str(x) for x in globals().keys() if "lib" in safe_str(x).lower()]
+    except Exception:
+        pass
+    raise Exception("Library repository manager is unavailable. Global lib-like names: " + safe_str(names))
+
+
+def object_has_libman_api(obj):
+    return has_attr_safe(obj, "get_libraries") or has_attr_safe(obj, "add_library") or has_attr_safe(obj, "add_placeholder") or has_attr_safe(obj, "remove_library")
+
+
+def find_library_manager_in_tree(root, max_nodes):
+    state = {"count": 0}
+
+    def visit(obj, path):
+        if state["count"] >= max_nodes:
+            return None, None
+        state["count"] += 1
+        name = safe_name(obj)
+        full_path = path + "/" + name
+        if object_has_libman_api(obj):
+            return obj, "tree:" + full_path
+        children = get_children_compat(obj, full_path)
+        for child in children:
+            found, source = visit(child, full_path)
+            if found is not None:
+                return found, source
+        return None, None
+
+    return visit(root, "")
+
+
+def get_project_libman(project, command):
+    manager_name = command.get("manager_name")
+    if manager_name:
+        target, found = select_object_by_index_or_best(project, manager_name, command.get("manager_index"))
+        if not object_has_libman_api(target) and has_attr_safe(target, "get_library_manager"):
+            try:
+                return target.get_library_manager(), "object.get_library_manager(" + safe_str(manager_name) + ")"
+            except Exception as e:
+                debug_log("object.get_library_manager failed: " + safe_str(e))
+        return target, "object:" + safe_str(manager_name)
+
+    app = project.active_application
+    attempts = [
+        ("active_application.get_library_manager()", lambda: app.get_library_manager()),
+        ("project.get_library_manager()", lambda: project.get_library_manager()),
+        ("active_application.library_manager", lambda: app.library_manager),
+        ("project.library_manager", lambda: project.library_manager),
+    ]
+    for label, fn in attempts:
+        try:
+            obj = fn()
+            if obj is not None:
+                return obj, label
+        except Exception as e:
+            debug_log(label + " failed: " + safe_str(e))
+
+    found, source = find_library_manager_in_tree(app, 250)
+    if found is not None:
+        return found, source
+
+    try:
+        repo = project.library
+        if object_has_libman_api(repo):
+            return repo, "project.library"
+    except Exception:
+        pass
+
+    raise Exception("Cannot find project Library Manager. Pass manager_name if needed.")
+
+
+def call_first_success(attempts):
+    errors = []
+    for label, fn in attempts:
+        try:
+            value = fn()
+            return value, label, errors
+        except Exception as e:
+            errors.append({"method": label, "error": safe_str(e)})
+            debug_log(label + " failed: " + safe_str(e))
+    raise Exception("All attempts failed: " + safe_str(errors))
+
+
+def read_project_libraries(project, command):
+    libman, source = get_project_libman(project, command)
+    diagnostics = {"manager_source": source, "manager_object": safe_str(libman), "manager_dir": safe_dir(libman, 120)}
+    raw = None
+    method = None
+    errors = []
+    attempts = [
+        ("get_libraries()", lambda: libman.get_libraries()),
+        ("libraries", lambda: libman.libraries),
+        ("references", lambda: libman.references),
+    ]
+    for label, fn in attempts:
+        try:
+            raw = fn()
+            method = label
+            break
+        except Exception as e:
+            errors.append({"method": label, "error": safe_str(e)})
+    if raw is None:
+        diagnostics["errors"] = errors
+        raise Exception("Cannot read project libraries: " + safe_str(errors))
+    libs = []
+    for index, lib in enumerate(collection_to_list(raw)):
+        info = library_ref_info(lib)
+        info["index"] = index
+        libs.append(info)
+    limited = limit_items(libs, command.get("max_results", 100))
+    return {
+        "manager_source": source,
+        "manager_object": safe_str(libman),
+        "method": method,
+        "count": len(libs),
+        "libraries": limited,
+        "truncated": len(libs) > len(limited),
+        "diagnostics": diagnostics,
+    }
+
+
+def get_categories_from_manager(repo):
+    result = []
+    errors = []
+    attempts = [
+        ("categories", lambda: repo.categories),
+        ("top_level_categories", lambda: repo.top_level_categories),
+    ]
+    for label, fn in attempts:
+        try:
+            raw = collection_to_list(fn())
+            for item in raw:
+                result.append((item, label))
+        except Exception as e:
+            errors.append({"method": label, "error": safe_str(e)})
+    return result, errors
+
+
+def get_repository_entries_from_manager(repo):
+    try:
+        return collection_to_list(repo.repositories), None
+    except Exception as e:
+        return [], safe_str(e)
+
+
+def append_library_item(items, seen, lib, source, index, query, include_file_path, repo):
+    info = library_ref_info(lib)
+    info["index"] = index
+    info["source"] = source
+    if not library_matches(info, query):
+        return False
+    identity = u"|".join([
+        to_unicode(info.get("name", "")),
+        to_unicode(info.get("version", "")),
+        to_unicode(info.get("company", "")),
+        to_unicode(info.get("namespace", "")),
+        to_unicode(info.get("object", "")),
+    ])
+    if identity in seen:
+        return False
+    seen.add(identity)
+    if include_file_path and has_attr_safe(repo, "get_file_path"):
+        for label, fn in [
+            ("get_file_path(library)", lambda: repo.get_file_path(lib)),
+            ("get_file_path(name)", lambda: repo.get_file_path(info.get("name"))),
+        ]:
+            try:
+                value = fn()
+                if value:
+                    info["file_path"] = safe_str(value)
+                    info["file_path_method"] = label
+                    break
+            except Exception as e:
+                info["file_path_error"] = safe_str(e)
+    items.append(info)
+    return True
+
+
+def collect_repository_libraries_from_manager(repo, source, command):
+    query = command.get("query")
+    include_file_path = bool(command.get("include_file_path", False))
+    include_categories = bool(command.get("include_categories", True))
+    diagnostics = {
+        "repository_source": source,
+        "repository_object": safe_str(repo),
+        "repository_dir": safe_dir(repo, 180),
+        "attempts": [],
+    }
+    items = []
+    seen = set()
+
+    def try_collect(label, fn):
+        try:
+            raw = fn()
+            values = collection_to_list(raw)
+            diagnostics["attempts"].append({"method": label, "ok": True, "raw_count": len(values)})
+            added = 0
+            for lib in values:
+                if append_library_item(items, seen, lib, source + ":" + label, len(items), query, include_file_path, repo):
+                    added += 1
+            diagnostics["attempts"][-1]["added"] = added
+            return added
+        except Exception as e:
+            diagnostics["attempts"].append({"method": label, "ok": False, "error": safe_str(e)})
+            return 0
+
+    # Main ILibManager calls. SP11/OEM builds differ in overload exposure, so keep
+    # all variants and report diagnostics instead of failing with MCP -32000.
+    try_collect("get_all_libraries()", lambda: repo.get_all_libraries())
+    try_collect("get_all_libraries(False)", lambda: repo.get_all_libraries(False))
+    try_collect("get_all_libraries(True)", lambda: repo.get_all_libraries(True))
+    try_collect("libraries", lambda: repo.libraries)
+
+    categories, category_errors = get_categories_from_manager(repo)
+    diagnostics["categories_errors"] = category_errors
+    diagnostics["categories"] = [category_info(c[0]) for c in categories[:50]] if include_categories else []
+    for category, category_source in categories:
+        label_prefix = category_source + ":" + safe_str(category)
+        try_collect("get_all_libraries(" + label_prefix + ")", lambda category=category: repo.get_all_libraries(category))
+        try_collect("get_all_libraries(" + label_prefix + ", False)", lambda category=category: repo.get_all_libraries(category, False))
+        try_collect("get_all_libraries(" + label_prefix + ", True)", lambda category=category: repo.get_all_libraries(category, True))
+
+    repo_entries, repo_entries_error = get_repository_entries_from_manager(repo)
+    diagnostics["repositories_error"] = repo_entries_error
+    diagnostics["repositories"] = [repository_entry_info(r) for r in repo_entries[:50]]
+    for repo_entry in repo_entries:
+        label = "get_all_libraries(repository:" + safe_str(repo_entry) + ")"
+        try_collect(label, lambda repo_entry=repo_entry: repo.get_all_libraries(repo_entry))
+
+    # Direct lookup fallback: useful when full enumeration is blocked but user
+    # passes a concrete query/library name.
+    direct_name = command.get("library_name") or query
+    if direct_name:
+        direct_attempts = []
+        version = command.get("version")
+        company = command.get("company")
+        if version and company:
+            direct_attempts.append(("find_library(name, version, company)", lambda: repo.find_library(direct_name, version, company)))
+            direct_attempts.append(("get_library(name, version, company)", lambda: repo.get_library(direct_name, version, company)))
+        if version:
+            direct_attempts.append(("find_library(name, version)", lambda: repo.find_library(direct_name, version)))
+            direct_attempts.append(("get_library(name, version)", lambda: repo.get_library(direct_name, version)))
+        direct_attempts.append(("find_library(name)", lambda: repo.find_library(direct_name)))
+        direct_attempts.append(("get_library(name)", lambda: repo.get_library(direct_name)))
+        for label, fn in direct_attempts:
+            try:
+                lib = fn()
+                ok = lib is not None and append_library_item(items, seen, lib, source + ":" + label, len(items), query, include_file_path, repo)
+                diagnostics["attempts"].append({"method": label, "ok": True, "added": 1 if ok else 0})
+            except Exception as e:
+                diagnostics["attempts"].append({"method": label, "ok": False, "error": safe_str(e)})
+
+    return items, diagnostics
+
+
+def read_repository_libraries(project, command):
+    max_results = command.get("max_results", 100)
+    diagnostics = {"managers": [], "global_lib_names": []}
+    try:
+        diagnostics["global_lib_names"] = sorted([safe_str(x) for x in globals().keys() if "lib" in safe_str(x).lower()])
+    except Exception:
+        pass
+
+    managers = get_repository_manager_candidates(project)
+    if not managers:
+        return {
+            "available": False,
+            "query": command.get("query"),
+            "count": 0,
+            "libraries": [],
+            "truncated": False,
+            "diagnostics": diagnostics,
+            "error": "No ILibManager/repository manager found. Check diagnostics.global_lib_names.",
+        }
+
+    all_items = []
+    seen = set()
+    for repo, source in managers:
+        items, diag = collect_repository_libraries_from_manager(repo, source, command)
+        diagnostics["managers"].append(diag)
+        for item in items:
+            identity = u"|".join([
+                to_unicode(item.get("name", "")),
+                to_unicode(item.get("version", "")),
+                to_unicode(item.get("company", "")),
+                to_unicode(item.get("namespace", "")),
+                to_unicode(item.get("object", "")),
+            ])
+            if identity in seen:
+                continue
+            seen.add(identity)
+            item["index"] = len(all_items)
+            all_items.append(item)
+
+    limited = limit_items(all_items, max_results)
+    return {
+        "available": True,
+        "query": command.get("query"),
+        "count": len(all_items),
+        "libraries": limited,
+        "truncated": len(all_items) > len(limited),
+        "diagnostics": diagnostics,
+    }
+
+
+def find_repository_library_object(project, library_name, version, company):
+    managers = get_repository_manager_candidates(project)
+    errors = []
+    for repo, source in managers:
+        attempts = []
+        if library_name and version and company:
+            attempts.append(("find_library(name, version, company)", lambda repo=repo: repo.find_library(library_name, version, company)))
+            attempts.append(("get_library(name, version, company)", lambda repo=repo: repo.get_library(library_name, version, company)))
+        if library_name and version:
+            attempts.append(("find_library(name, version)", lambda repo=repo: repo.find_library(library_name, version)))
+            attempts.append(("get_library(name, version)", lambda repo=repo: repo.get_library(library_name, version)))
+        if library_name:
+            attempts.append(("find_library(name)", lambda repo=repo: repo.find_library(library_name)))
+            attempts.append(("get_library(name)", lambda repo=repo: repo.get_library(library_name)))
+        for label, fn in attempts:
+            try:
+                value = fn()
+                if value is not None:
+                    return value, source + ":" + label, errors
+            except Exception as e:
+                errors.append({"source": source, "method": label, "error": safe_str(e)})
+    return None, "repository_manager_candidates", errors
+
+
+def find_libraries(project, command):
+    query = command.get("query") or command.get("library_name") or ""
+    max_results = command.get("max_results", 100)
+    project_result = read_project_libraries(project, command)
+    project_matches = []
+    for lib in project_result.get("libraries", []):
+        if library_matches(lib, query):
+            project_matches.append(lib)
+    result = {
+        "query": query,
+        "project": {
+            "manager_source": project_result.get("manager_source"),
+            "count": len(project_matches),
+            "libraries": limit_items(project_matches, max_results),
+        },
+    }
+    if bool(command.get("include_repository", True)):
+        repo_command = dict(command)
+        repo_command["query"] = query
+        result["repository"] = read_repository_libraries(project, repo_command)
+    return result
+
+def add_project_library(project, project_path, command):
+    name = command.get("library_name")
+    version = command.get("version")
+    company = command.get("company")
+    namespace = command.get("namespace")
+    save_after = bool(command.get("save_after", True))
+    backup_before = bool(command.get("backup_before", True))
+    if not name:
+        raise Exception("library_name is required")
+    backup_path = None
+    if backup_before:
+        backup_path = make_backup(project_path)
+    libman, manager_source = get_project_libman(project, command)
+    repo_lib, repo_source, repo_errors = find_repository_library_object(project, name, version, company)
+    attempts = []
+    if repo_lib is not None:
+        attempts.append(("add_library(repository_library)", lambda: libman.add_library(repo_lib)))
+        if namespace:
+            attempts.append(("add_library(repository_library, namespace)", lambda: libman.add_library(repo_lib, namespace)))
+    if name and version and company and namespace:
+        attempts.append(("add_library(name, version, company, namespace)", lambda: libman.add_library(name, version, company, namespace)))
+    if name and version and company:
+        attempts.append(("add_library(name, version, company)", lambda: libman.add_library(name, version, company)))
+    if name and version:
+        attempts.append(("add_library(name, version)", lambda: libman.add_library(name, version)))
+    if name:
+        attempts.append(("add_library(name)", lambda: libman.add_library(name)))
+    created, method, errors = call_first_success(attempts)
+    result = {
+        "library_name": name,
+        "version": version,
+        "company": company,
+        "namespace": namespace,
+        "manager_source": manager_source,
+        "repository_source": repo_source,
+        "repository_lookup_errors": repo_errors,
+        "method": method,
+        "created": library_ref_info(created) if created is not None else None,
+        "attempt_errors": errors,
+        "backup_path": backup_path,
+        "saved": False,
+    }
+    if save_after:
+        result["save"] = save_project(project)
+        result["saved"] = True
+    return result
+
+
+def add_project_placeholder(project, project_path, command):
+    placeholder_name = command.get("placeholder_name")
+    default_library = command.get("default_library")
+    version = command.get("version")
+    company = command.get("company")
+    save_after = bool(command.get("save_after", True))
+    backup_before = bool(command.get("backup_before", True))
+    if not placeholder_name:
+        raise Exception("placeholder_name is required")
+    backup_path = None
+    if backup_before:
+        backup_path = make_backup(project_path)
+    libman, manager_source = get_project_libman(project, command)
+    attempts = []
+    if default_library and version and company:
+        attempts.append(("add_placeholder(name, default_library, version, company)", lambda: libman.add_placeholder(placeholder_name, default_library, version, company)))
+    if default_library and version:
+        attempts.append(("add_placeholder(name, default_library, version)", lambda: libman.add_placeholder(placeholder_name, default_library, version)))
+    if default_library:
+        attempts.append(("add_placeholder(name, default_library)", lambda: libman.add_placeholder(placeholder_name, default_library)))
+    attempts.append(("add_placeholder(name)", lambda: libman.add_placeholder(placeholder_name)))
+    created, method, errors = call_first_success(attempts)
+    result = {
+        "placeholder_name": placeholder_name,
+        "default_library": default_library,
+        "version": version,
+        "company": company,
+        "manager_source": manager_source,
+        "method": method,
+        "created": library_ref_info(created) if created is not None else None,
+        "attempt_errors": errors,
+        "backup_path": backup_path,
+        "saved": False,
+    }
+    if save_after:
+        result["save"] = save_project(project)
+        result["saved"] = True
+    return result
+
+
+def remove_project_library(project, project_path, command):
+    name = command.get("library_name")
+    version = command.get("version")
+    company = command.get("company")
+    library_index = command.get("library_index")
+    save_after = bool(command.get("save_after", True))
+    backup_before = bool(command.get("backup_before", True))
+    if not name:
+        raise Exception("library_name is required")
+    libman, manager_source = get_project_libman(project, command)
+    existing = read_project_libraries(project, command).get("libraries", [])
+    matches = []
+    for lib in existing:
+        if library_matches(lib, name):
+            if version and to_unicode(version).lower() not in to_unicode(lib).lower():
+                continue
+            if company and to_unicode(company).lower() not in to_unicode(lib).lower():
+                continue
+            matches.append(lib)
+    if library_index is not None:
+        idx = int(library_index)
+        if idx < 0 or idx >= len(existing):
+            raise Exception("library_index out of range")
+        selected_info = existing[idx]
+    else:
+        if len(matches) == 0:
+            raise Exception("Project library not found: " + safe_str(name))
+        selected_info = matches[0]
+    backup_path = None
+    if backup_before:
+        backup_path = make_backup(project_path)
+    selected_index = selected_info.get("index")
+    selected_obj = None
+    raw_libraries = collection_to_list(libman.get_libraries())
+    try:
+        selected_obj = raw_libraries[int(selected_index)]
+    except Exception:
+        selected_obj = None
+    attempts = []
+    if selected_obj is not None:
+        attempts.append(("remove_library(library_reference)", lambda: libman.remove_library(selected_obj)))
+    if name and version and company:
+        attempts.append(("remove_library(name, version, company)", lambda: libman.remove_library(name, version, company)))
+    if name and version:
+        attempts.append(("remove_library(name, version)", lambda: libman.remove_library(name, version)))
+    attempts.append(("remove_library(name)", lambda: libman.remove_library(name)))
+    removed, method, errors = call_first_success(attempts)
+    result = {
+        "library_name": name,
+        "version": version,
+        "company": company,
+        "manager_source": manager_source,
+        "selected": selected_info,
+        "method": method,
+        "removed_result": compact_message_value(removed),
+        "attempt_errors": errors,
+        "backup_path": backup_path,
+        "saved": False,
+    }
+    if save_after:
+        result["save"] = save_project(project)
+        result["saved"] = True
+    return result
+
+
+def install_repository_library(project, command):
+    library_path = command.get("library_path")
+    if not library_path:
+        raise Exception("library_path is required")
+    repo, source = get_repository_manager(project)
+    attempts = [
+        ("install_library(path)", lambda: repo.install_library(library_path)),
+        ("install_library(path, True)", lambda: repo.install_library(library_path, True)),
+    ]
+    value, method, errors = call_first_success(attempts)
+    return {
+        "library_path": library_path,
+        "repository_source": source,
+        "method": method,
+        "result": compact_message_value(value),
+        "attempt_errors": errors,
+    }
+
+
+def uninstall_repository_library(project, command):
+    name = command.get("library_name")
+    version = command.get("version")
+    company = command.get("company")
+    if not name:
+        raise Exception("library_name is required")
+    repo, source = get_repository_manager(project)
+    repo_lib, repo_source, repo_errors = find_repository_library_object(project, name, version, company)
+    attempts = []
+    if repo_lib is not None:
+        attempts.append(("uninstall_library(repository_library)", lambda: repo.uninstall_library(repo_lib)))
+    if name and version and company:
+        attempts.append(("uninstall_library(name, version, company)", lambda: repo.uninstall_library(name, version, company)))
+    if name and version:
+        attempts.append(("uninstall_library(name, version)", lambda: repo.uninstall_library(name, version)))
+    attempts.append(("uninstall_library(name)", lambda: repo.uninstall_library(name)))
+    value, method, errors = call_first_success(attempts)
+    return {
+        "library_name": name,
+        "version": version,
+        "company": company,
+        "repository_source": source,
+        "lookup_source": repo_source,
+        "lookup_errors": repo_errors,
+        "method": method,
+        "result": compact_message_value(value),
+        "attempt_errors": errors,
+    }
+
 def diagnose_system():
     result = {"python_version": safe_str(sys.version), "globals": {}}
-    for name in ["projects", "system", "VersionUpdateFlags", "PouType", "DutType", "Guid"]:
+    for name in ["projects", "system", "librarymanager", "library_manager", "libmanager", "lib_manager", "LibraryManager", "VersionUpdateFlags", "PouType", "DutType", "Guid"]:
         try:
             obj = globals()[name]
             result["globals"][name] = {"available": True, "object": safe_str(obj)}
@@ -1595,6 +2367,10 @@ def diagnose_system():
                 result["globals"][name]["dir_error"] = safe_str(e)
         except Exception as e:
             result["globals"][name] = {"available": False, "error": safe_str(e)}
+    try:
+        result["global_lib_names"] = sorted([safe_str(x) for x in globals().keys() if "lib" in safe_str(x).lower()])
+    except Exception as e:
+        result["global_lib_names_error"] = safe_str(e)
     return result
 
 
@@ -1779,6 +2555,35 @@ def handle(command):
 
     if action == "delete_object":
         result = delete_object(project, project_path, command)
+        return {"ok": True, "action": action, "project_path": project_path, "result": result}
+
+    if action == "library_list":
+        return {"ok": True, "action": action, "project_path": project_path, "libraries": read_project_libraries(project, command)}
+
+    if action == "library_find":
+        return {"ok": True, "action": action, "project_path": project_path, "result": find_libraries(project, command)}
+
+    if action == "library_add":
+        result = add_project_library(project, project_path, command)
+        return {"ok": True, "action": action, "project_path": project_path, "result": result}
+
+    if action == "library_add_placeholder":
+        result = add_project_placeholder(project, project_path, command)
+        return {"ok": True, "action": action, "project_path": project_path, "result": result}
+
+    if action == "library_remove":
+        result = remove_project_library(project, project_path, command)
+        return {"ok": True, "action": action, "project_path": project_path, "result": result}
+
+    if action == "library_repositories":
+        return {"ok": True, "action": action, "project_path": project_path, "repository": read_repository_libraries(project, command)}
+
+    if action == "library_install":
+        result = install_repository_library(project, command)
+        return {"ok": True, "action": action, "project_path": project_path, "result": result}
+
+    if action == "library_uninstall":
+        result = uninstall_repository_library(project, command)
         return {"ok": True, "action": action, "project_path": project_path, "result": result}
 
     if action == "save_project":

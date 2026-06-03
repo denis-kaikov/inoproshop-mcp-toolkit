@@ -234,6 +234,73 @@ export type InoProShopCommand =
       max_nodes?: number;
       include_capabilities?: boolean;
     }
+  | {
+      action: "library_list";
+      project_path: string;
+      manager_name?: string;
+      max_results?: number;
+    }
+  | {
+      action: "library_find";
+      project_path: string;
+      query: string;
+      manager_name?: string;
+      include_repository?: boolean;
+      max_results?: number;
+    }
+  | {
+      action: "library_add";
+      project_path: string;
+      library_name: string;
+      version?: string;
+      company?: string;
+      namespace?: string;
+      manager_name?: string;
+      save_after?: boolean;
+      backup_before?: boolean;
+    }
+  | {
+      action: "library_add_placeholder";
+      project_path: string;
+      placeholder_name: string;
+      default_library?: string;
+      version?: string;
+      company?: string;
+      manager_name?: string;
+      save_after?: boolean;
+      backup_before?: boolean;
+    }
+  | {
+      action: "library_remove";
+      project_path: string;
+      library_name: string;
+      version?: string;
+      company?: string;
+      manager_name?: string;
+      library_index?: number;
+      save_after?: boolean;
+      backup_before?: boolean;
+    }
+  | {
+      action: "library_repositories";
+      project_path: string;
+      query?: string;
+      include_file_path?: boolean;
+      include_categories?: boolean;
+      max_results?: number;
+    }
+  | {
+      action: "library_install";
+      project_path: string;
+      library_path: string;
+    }
+  | {
+      action: "library_uninstall";
+      project_path: string;
+      library_name: string;
+      version?: string;
+      company?: string;
+    }
   | { action: "stop_bridge" };
 
 export type InoProShopRunnerOptions = {

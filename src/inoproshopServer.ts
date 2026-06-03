@@ -29,7 +29,7 @@ const DEFAULT_BRIDGE_DIR =
 const server = new Server(
   {
     name: "inoproshop-sp11-mcp",
-    version: "0.7.0",
+    version: "0.8.0",
   },
   {
     capabilities: {
@@ -115,10 +115,55 @@ const createKindEnum = ["pou", "gvl", "method", "property", "action", "transitio
 const pouTypeEnum = ["program", "function_block", "function"];
 const dutTypeEnum = ["structure", "enum", "union", "alias"];
 const compileActionEnum = ["build", "errors", "messages"];
+const libraryActionEnum = ["help", "list", "find", "add", "add_placeholder", "remove", "repositories", "install", "uninstall"];
 
 function allowed(values: readonly string[]) {
   return "Allowed: " + values.join(", ") + ".";
 }
+
+
+const LIBRARY_AI_HELP = `# InoProShop library help for AI agents
+
+Use tool: inoproshop_library.
+
+Actions:
+- help: return this guide.
+- list: list libraries already added to the project Library Manager.
+- find: search project libraries and, optionally, installed repository libraries.
+- repositories: list/search installed repository libraries. Use diagnostics if result is empty.
+- add: add an installed library to the project Library Manager.
+- add_placeholder: add a placeholder reference.
+- remove: remove a project library reference.
+- install: install a .library/.compiled-library file into the local repository.
+- uninstall: remove a library from the local repository.
+
+Common rules:
+- Always open or set a project before project library operations.
+- Use list before remove.
+- Use find or repositories before add.
+- Prefer exact library_name + version + company when adding/removing.
+- If several project references have the same name, use library_index from list.
+- Set save_after=true after add/remove/add_placeholder unless only testing.
+- Keep include_file_path=false unless the user needs local paths.
+
+Typical flows:
+1. Show project libraries:
+   { "action": "list" }
+2. Search installed libraries:
+   { "action": "repositories", "query": "Standard", "max_results": 20 }
+3. Add library:
+   { "action": "add", "library_name": "Standard", "version": "3.5.11.0", "save_after": true }
+4. Remove library:
+   { "action": "remove", "library_name": "Standard", "library_index": 0, "save_after": true }
+5. Diagnose empty repository results:
+   { "action": "repositories", "max_results": 20, "include_categories": true }
+
+Important limitations:
+- repositories is SP11-dependent. If empty, read diagnostics.managers.
+- Installed repository libraries are not the same as project-added libraries.
+- Adding a library may fail if version/company does not exactly match repository metadata.
+- Compiled libraries usually do not expose source code or function lists.
+`;
 
 async function projectPath(args: any): Promise<string> {
   return await resolveEffectiveProjectPath(args, DEFAULT_BRIDGE_DIR);
@@ -303,6 +348,34 @@ server.setRequestHandler(ListToolsRequestSchema, async function () {
             backup_before: { type: "boolean", default: true, description: "Default: true." },
           },
           required: ["kind", "name"],
+        },
+      },
+      {
+        name: "inoproshop_library",
+        description: "Libraries: help, list, find, add, remove.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            action: { type: "string", enum: libraryActionEnum, default: "help", description: allowed(libraryActionEnum) },
+            project_path: commonProjectField,
+            query: { type: "string", description: "Search text." },
+            library_name: { type: "string", description: "Library name." },
+            version: { type: "string", description: "Library version." },
+            company: { type: "string", description: "Library company/vendor." },
+            namespace: { type: "string", description: "Project namespace." },
+            manager_name: { type: "string", description: "Library Manager object name." },
+            placeholder_name: { type: "string", description: "Placeholder name." },
+            default_library: { type: "string", description: "Placeholder target library." },
+            library_index: { type: "number", description: "Index for remove." },
+            library_path: { type: "string", description: ".library file path." },
+            include_repository: { type: "boolean", default: true, description: "For action=find." },
+            include_file_path: { type: "boolean", default: false, description: "For repositories/find." },
+            include_categories: { type: "boolean", default: true, description: "For repositories diagnostics." },
+            max_results: { type: "number", default: 100, description: "Result limit." },
+            save_after: { type: "boolean", default: true, description: "After project change." },
+            backup_before: { type: "boolean", default: true, description: "Before project change." },
+          },
+          required: ["action"],
         },
       },
       {
@@ -770,6 +843,150 @@ server.setRequestHandler(CallToolRequestSchema, async function (request) {
     }
 
     throw new Error("Unknown create kind: " + kind);
+  }
+
+  if (toolName === "inoproshop_library") {
+    const action = getStringArg(args, "action", "help");
+
+    if (action === "help") {
+      return jsonText({
+        ok: true,
+        action: "library_help",
+        help: LIBRARY_AI_HELP,
+      });
+    }
+
+    const effectiveProjectPath = await projectPath(args);
+    const manager_name = getOptionalStringArg(args, "manager_name");
+    const max_results = getOptionalNumberArg(args, "max_results") || 100;
+
+    if (action === "list") {
+      return jsonText(
+        await runInoProShopCommand(
+          { action: "library_list", project_path: effectiveProjectPath, manager_name, max_results },
+          commonOptions()
+        )
+      );
+    }
+
+    if (action === "find") {
+      return jsonText(
+        await runInoProShopCommand(
+          {
+            action: "library_find",
+            project_path: effectiveProjectPath,
+            query: getStringArg(args, "query", getOptionalStringArg(args, "library_name") || ""),
+            manager_name,
+            include_repository: getBooleanArg(args, "include_repository", true),
+            max_results,
+          },
+          commonOptions()
+        )
+      );
+    }
+
+    if (action === "add") {
+      return jsonText(
+        await runInoProShopCommand(
+          {
+            action: "library_add",
+            project_path: effectiveProjectPath,
+            library_name: getStringArg(args, "library_name"),
+            version: getOptionalStringArg(args, "version"),
+            company: getOptionalStringArg(args, "company"),
+            namespace: getOptionalStringArg(args, "namespace"),
+            manager_name,
+            save_after: getBooleanArg(args, "save_after", true),
+            backup_before: getBooleanArg(args, "backup_before", true),
+          },
+          commonOptions()
+        )
+      );
+    }
+
+    if (action === "add_placeholder") {
+      return jsonText(
+        await runInoProShopCommand(
+          {
+            action: "library_add_placeholder",
+            project_path: effectiveProjectPath,
+            placeholder_name: getStringArg(args, "placeholder_name"),
+            default_library: getOptionalStringArg(args, "default_library"),
+            version: getOptionalStringArg(args, "version"),
+            company: getOptionalStringArg(args, "company"),
+            manager_name,
+            save_after: getBooleanArg(args, "save_after", true),
+            backup_before: getBooleanArg(args, "backup_before", true),
+          },
+          commonOptions()
+        )
+      );
+    }
+
+    if (action === "remove") {
+      return jsonText(
+        await runInoProShopCommand(
+          {
+            action: "library_remove",
+            project_path: effectiveProjectPath,
+            library_name: getStringArg(args, "library_name"),
+            version: getOptionalStringArg(args, "version"),
+            company: getOptionalStringArg(args, "company"),
+            manager_name,
+            library_index: getOptionalNumberArg(args, "library_index"),
+            save_after: getBooleanArg(args, "save_after", true),
+            backup_before: getBooleanArg(args, "backup_before", true),
+          },
+          commonOptions()
+        )
+      );
+    }
+
+    if (action === "repositories") {
+      return jsonText(
+        await runInoProShopCommand(
+          {
+            action: "library_repositories",
+            project_path: effectiveProjectPath,
+            query: getOptionalStringArg(args, "query"),
+            include_file_path: getBooleanArg(args, "include_file_path", false),
+            include_categories: getBooleanArg(args, "include_categories", true),
+            max_results,
+          },
+          commonOptions()
+        )
+      );
+    }
+
+    if (action === "install") {
+      return jsonText(
+        await runInoProShopCommand(
+          {
+            action: "library_install",
+            project_path: effectiveProjectPath,
+            library_path: getStringArg(args, "library_path"),
+          },
+          commonOptions()
+        )
+      );
+    }
+
+    if (action === "uninstall") {
+      return jsonText(
+        await runInoProShopCommand(
+          {
+            action: "library_uninstall",
+            project_path: effectiveProjectPath,
+            library_name: getStringArg(args, "library_name"),
+            version: getOptionalStringArg(args, "version"),
+            company: getOptionalStringArg(args, "company"),
+          },
+          commonOptions()
+        )
+      );
+    }
+
+    throw new Error("Unknown library action: " + action);
   }
 
   if (toolName === "inoproshop_compile") {

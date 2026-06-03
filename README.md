@@ -90,7 +90,7 @@ setx INOPROSHOP_PROJECT "C:\Users\kaykov\Desktop\Avanpost\PLC\PLC.project"
 
 ## Tools
 
-The MCP API is intentionally compact: 6 tools instead of many one-action tools.
+The MCP API is intentionally compact: 7 tools instead of many one-action tools.
 
 | Tool | Use |
 |---|---|
@@ -99,6 +99,7 @@ The MCP API is intentionally compact: 6 tools instead of many one-action tools.
 | `inoproshop_read` | Read programs, object, find, info, tree |
 | `inoproshop_edit` | Write/patch/rename/delete object |
 | `inoproshop_create` | Create POU, GVL, member, DUT, folder |
+| `inoproshop_library` | Library help/list/find/add/remove |
 | `inoproshop_compile` | Build and read errors/warnings |
 
 ## Basic workflow
@@ -294,6 +295,93 @@ Create DUT:
 }
 ```
 
+### `inoproshop_library`
+
+AI help file: `docs/AI_LIBRARY_HELP.md`.
+
+`action`: `help`, `list`, `find`, `add`, `add_placeholder`, `remove`, `repositories`, `install`, `uninstall`
+
+Show AI-oriented library guide:
+
+```json
+{ "action": "help" }
+```
+
+Rules for agents:
+
+- Use `help` when unsure.
+- Use `list` before `remove`.
+- Use `find` or `repositories` before `add`.
+- Prefer exact `library_name` + `version` + `company`.
+- Use `library_index` when duplicate names exist.
+
+Project libraries:
+
+```json
+{ "action": "list" }
+```
+
+Search project and repository libraries:
+
+```json
+{ "action": "find", "query": "Standard", "include_repository": true }
+```
+
+Add a library reference to the project:
+
+```json
+{
+  "action": "add",
+  "library_name": "Standard",
+  "version": "3.5.11.0",
+  "company": "3S - Smart Software Solutions GmbH",
+  "save_after": true,
+  "backup_before": true
+}
+```
+
+Add a placeholder:
+
+```json
+{
+  "action": "add_placeholder",
+  "placeholder_name": "SysTime",
+  "default_library": "SysTime",
+  "save_after": true
+}
+```
+
+Remove a project library:
+
+```json
+{ "action": "remove", "library_name": "Standard", "save_after": true }
+```
+
+Read installed repository libraries:
+
+```json
+{ "action": "repositories", "query": "Standard", "include_file_path": true }
+```
+
+If the list is empty, check diagnostics instead of the MCP error. The tool now tries `global.librarymanager`, `project.library`, category overloads and repository entries, then returns `diagnostics.managers` with every attempted SP11 call.
+
+```json
+{ "action": "repositories", "max_results": 20, "include_categories": true }
+```
+
+Install/uninstall repository library:
+
+```json
+{ "action": "install", "library_path": "C:\\libs\\MyLib.library" }
+{ "action": "uninstall", "library_name": "MyLib", "version": "1.0.0.0" }
+```
+
+If the Library Manager object is not found automatically, pass:
+
+```json
+{ "action": "list", "manager_name": "Library Manager" }
+```
+
 ### `inoproshop_compile`
 
 `action`: `build`, `errors`, `messages`
@@ -329,6 +417,10 @@ Read current message buffer only:
 | `save_after` | Save after change. Default: `true`. |
 | `build_after` | Build after change. Default: `false`. |
 | `backup_before` | Create `.mcp_backup_*` first. Default: `true`. |
+| `library_name` | Library name for library actions. |
+| `version` | Optional library version. |
+| `company` | Optional library vendor/company. |
+| `manager_name` | Optional Library Manager object name. |
 
 ## Safety
 
@@ -350,6 +442,8 @@ read -> patch -> compile errors -> fix -> save
 - `Application.build()` can return `None` even when build ran.
 - Message APIs vary by SP11/OEM build.
 - Creation overloads vary by SP11/OEM build.
+- Library Manager overloads vary by SP11/OEM build; errors include attempted signatures.
+- Use `inoproshop_library { "action": "help" }` or `docs/AI_LIBRARY_HELP.md` as compact AI context for library work.
 - Large tree scans can be slow; prefer `read.programs` or `read.object`.
 
 ## Troubleshooting

@@ -34,12 +34,14 @@ npm install
 npm run build
 ```
 
-Copy command files:
+Command files are now repo-relative. Prefer running them directly from the repository:
 
 ```text
-cmd/start-inoproshop-mcp.cmd    -> C:\PLC\start-inoproshop-mcp.cmd
-cmd/start-inoproshop-bridge.cmd -> C:\PLC\start-inoproshop-bridge.cmd
+cmd/start-inoproshop-mcp.cmd
+cmd/start-inoproshop-bridge.cmd    # optional manual bridge start
 ```
+
+If you copy `.cmd` files elsewhere, set `INOPROSHOP_REPO_ROOT` to the repository root.
 
 ## Paths
 
@@ -49,6 +51,19 @@ Profile:     InoProShop(V1.9.1.6)
 Bridge:      C:\Temp\inoproshop-mcp-bridge
 Bridge log:  C:\Temp\inoproshop-mcp-bridge\bridge.log
 MCP logs:    C:\Temp\inoproshop-mcp-logs
+```
+
+Bridge script path is auto-resolved as:
+
+```text
+<repo-root>\scripts\sp11_persistent_bridge.py
+```
+
+Override only if needed:
+
+```powershell
+setx INOPROSHOP_REPO_ROOT "C:\Users\kaykov\Desktop\inoproshop-mcp-toolkit"
+setx INOPROSHOP_EXE "C:\Inovance Control\InoProShop\CODESYS\Common\InoProShop.exe"
 ```
 
 Optional default project:
@@ -64,7 +79,7 @@ setx INOPROSHOP_PROJECT "C:\Users\kaykov\Desktop\Avanpost\PLC\PLC.project"
   "mcpServers": {
     "inoproshop": {
       "command": "cmd",
-      "args": ["/c", "C:\\PLC\\start-inoproshop-mcp.cmd"],
+      "args": ["/c", "C:\\Users\\kaykov\\Desktop\\inoproshop-mcp-toolkit\\cmd\\start-inoproshop-mcp.cmd"],
       "env": { "CODESYS_TIMEOUT_MS": "180000" },
       "timeout": 180,
       "disabled": false
@@ -90,7 +105,7 @@ The MCP API is intentionally compact: 6 tools instead of many one-action tools.
 
 ```text
 1. inoproshop_bridge { "action": "status" }
-2. inoproshop_bridge { "action": "start" }       # if not active
+2. inoproshop_bridge { "action": "start" }       # if not active; closes stale InoProShop windows first
 3. inoproshop_project { "action": "open", "project_path": "...\\PLC.project" }
 4. inoproshop_read { "mode": "programs", "include_text": true }
 5. inoproshop_edit { ... }
@@ -104,13 +119,22 @@ All selector fields have `enum` and short `Allowed: ...` descriptions in MCP sch
 
 ### `inoproshop_bridge`
 
-`action`: `status`, `start`, `stop`
+`action`: `status`, `start`, `restart`, `stop`
 
 ```json
 { "action": "status" }
 { "action": "start", "timeout_ms": 30000 }
+{ "action": "restart", "kill_existing": true }
 { "action": "stop", "timeout_ms": 15000 }
 ```
+
+Start rules:
+
+- `start`: does not launch a second bridge if one is active.
+- `start`: if no active bridge is found, closes old `InoProShop.exe` windows, clears stale queue files, then starts one bridge.
+- `restart`: always closes old `InoProShop.exe` windows and starts a fresh bridge.
+- `stop`: asks the bridge to stop and removes `bridge.ready`; it does not kill `InoProShop.exe`.
+- `kill_existing`: used only by `start`/`restart`, default `true`.
 
 ### `inoproshop_project`
 
@@ -351,8 +375,10 @@ explorer "C:\Temp\inoproshop-mcp-logs"
 Manual bridge start:
 
 ```powershell
-C:\PLC\start-inoproshop-bridge.cmd
+C:\Users\kaykov\Desktop\inoproshop-mcp-toolkit\cmd\start-inoproshop-bridge.cmd
 ```
+
+This `.cmd` computes the bridge script path from its own repo folder; no hard-coded repository script path is needed.
 
 ## Development notes
 

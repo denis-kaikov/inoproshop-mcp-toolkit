@@ -105,7 +105,7 @@ async function requireBridgeActive() {
   return status;
 }
 
-const bridgeActionEnum = ["status", "start", "stop"];
+const bridgeActionEnum = ["status", "start", "restart", "stop"];
 const projectActionEnum = ["status", "list", "set", "clear", "open", "create", "close", "info", "save", "diagnose"];
 const readModeEnum = ["programs", "object", "find", "info", "tree"];
 const editModeEnum = ["write", "patch", "rename", "delete"];
@@ -193,12 +193,13 @@ server.setRequestHandler(ListToolsRequestSchema, async function () {
     tools: [
       {
         name: "inoproshop_bridge",
-        description: "Bridge: status, start, stop.",
+        description: "Bridge: status, start, restart, stop.",
         inputSchema: {
           type: "object",
           properties: {
             action: { type: "string", enum: bridgeActionEnum, default: "status", description: allowed(bridgeActionEnum) },
             timeout_ms: { type: "number", description: "Start/stop timeout." },
+            kill_existing: { type: "boolean", default: true, description: "For start/restart only: close old InoProShop windows." },
           },
           required: [],
         },
@@ -333,11 +334,13 @@ server.setRequestHandler(CallToolRequestSchema, async function (request) {
       const result = await getBridgeStatus({ bridgeDir: DEFAULT_BRIDGE_DIR });
       return jsonText({ ok: true, action: "bridge_status", status: result });
     }
-    if (action === "start") {
+    if (action === "start" || action === "restart") {
       return jsonText(
         await startBridge({
           bridgeDir: DEFAULT_BRIDGE_DIR,
           timeoutMs: getOptionalNumberArg(args, "timeout_ms") || 30000,
+          restart: action === "restart",
+          killExisting: getBooleanArg(args, "kill_existing", true),
         })
       );
     }

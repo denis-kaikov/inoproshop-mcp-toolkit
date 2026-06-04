@@ -99,7 +99,7 @@ The MCP API is intentionally compact: 7 tools instead of many one-action tools.
 | `inoproshop_read` | Read programs, object, find, info, tree |
 | `inoproshop_edit` | Write/patch/rename/delete object |
 | `inoproshop_create` | Create POU, GVL, member, DUT, folder |
-| `inoproshop_library` | Library help/list/find/add/remove |
+| `inoproshop_library` | List/find/add/remove libraries |
 | `inoproshop_compile` | Build and read errors/warnings |
 
 ## Basic workflow
@@ -297,23 +297,7 @@ Create DUT:
 
 ### `inoproshop_library`
 
-AI help file: `docs/AI_LIBRARY_HELP.md`.
-
-`action`: `help`, `list`, `find`, `add`, `add_placeholder`, `remove`, `repositories`, `install`, `uninstall`
-
-Show AI-oriented library guide:
-
-```json
-{ "action": "help" }
-```
-
-Rules for agents:
-
-- Use `help` when unsure.
-- Use `list` before `remove`.
-- Use `find` or `repositories` before `add`.
-- Prefer exact `library_name` + `version` + `company`.
-- Use `library_index` when duplicate names exist.
+`action`: `list`, `find`, `add`, `add_placeholder`, `remove`, `repositories`, `install`, `uninstall`
 
 Project libraries:
 
@@ -443,7 +427,6 @@ read -> patch -> compile errors -> fix -> save
 - Message APIs vary by SP11/OEM build.
 - Creation overloads vary by SP11/OEM build.
 - Library Manager overloads vary by SP11/OEM build; errors include attempted signatures.
-- Use `inoproshop_library { "action": "help" }` or `docs/AI_LIBRARY_HELP.md` as compact AI context for library work.
 - Large tree scans can be slow; prefer `read.programs` or `read.object`.
 
 ## Troubleshooting

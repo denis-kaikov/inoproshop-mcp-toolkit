@@ -115,55 +115,11 @@ const createKindEnum = ["pou", "gvl", "method", "property", "action", "transitio
 const pouTypeEnum = ["program", "function_block", "function"];
 const dutTypeEnum = ["structure", "enum", "union", "alias"];
 const compileActionEnum = ["build", "errors", "messages"];
-const libraryActionEnum = ["help", "list", "find", "add", "add_placeholder", "remove", "repositories", "install", "uninstall"];
+const libraryActionEnum = ["list", "find", "add", "add_placeholder", "remove", "repositories", "install", "uninstall"];
 
 function allowed(values: readonly string[]) {
   return "Allowed: " + values.join(", ") + ".";
 }
-
-
-const LIBRARY_AI_HELP = `# InoProShop library help for AI agents
-
-Use tool: inoproshop_library.
-
-Actions:
-- help: return this guide.
-- list: list libraries already added to the project Library Manager.
-- find: search project libraries and, optionally, installed repository libraries.
-- repositories: list/search installed repository libraries. Use diagnostics if result is empty.
-- add: add an installed library to the project Library Manager.
-- add_placeholder: add a placeholder reference.
-- remove: remove a project library reference.
-- install: install a .library/.compiled-library file into the local repository.
-- uninstall: remove a library from the local repository.
-
-Common rules:
-- Always open or set a project before project library operations.
-- Use list before remove.
-- Use find or repositories before add.
-- Prefer exact library_name + version + company when adding/removing.
-- If several project references have the same name, use library_index from list.
-- Set save_after=true after add/remove/add_placeholder unless only testing.
-- Keep include_file_path=false unless the user needs local paths.
-
-Typical flows:
-1. Show project libraries:
-   { "action": "list" }
-2. Search installed libraries:
-   { "action": "repositories", "query": "Standard", "max_results": 20 }
-3. Add library:
-   { "action": "add", "library_name": "Standard", "version": "3.5.11.0", "save_after": true }
-4. Remove library:
-   { "action": "remove", "library_name": "Standard", "library_index": 0, "save_after": true }
-5. Diagnose empty repository results:
-   { "action": "repositories", "max_results": 20, "include_categories": true }
-
-Important limitations:
-- repositories is SP11-dependent. If empty, read diagnostics.managers.
-- Installed repository libraries are not the same as project-added libraries.
-- Adding a library may fail if version/company does not exactly match repository metadata.
-- Compiled libraries usually do not expose source code or function lists.
-`;
 
 async function projectPath(args: any): Promise<string> {
   return await resolveEffectiveProjectPath(args, DEFAULT_BRIDGE_DIR);
@@ -352,11 +308,11 @@ server.setRequestHandler(ListToolsRequestSchema, async function () {
       },
       {
         name: "inoproshop_library",
-        description: "Libraries: help, list, find, add, remove.",
+        description: "Libraries: list, find, add, remove.",
         inputSchema: {
           type: "object",
           properties: {
-            action: { type: "string", enum: libraryActionEnum, default: "help", description: allowed(libraryActionEnum) },
+            action: { type: "string", enum: libraryActionEnum, default: "list", description: allowed(libraryActionEnum) },
             project_path: commonProjectField,
             query: { type: "string", description: "Search text." },
             library_name: { type: "string", description: "Library name." },
@@ -846,16 +802,7 @@ server.setRequestHandler(CallToolRequestSchema, async function (request) {
   }
 
   if (toolName === "inoproshop_library") {
-    const action = getStringArg(args, "action", "help");
-
-    if (action === "help") {
-      return jsonText({
-        ok: true,
-        action: "library_help",
-        help: LIBRARY_AI_HELP,
-      });
-    }
-
+    const action = getStringArg(args, "action", "list");
     const effectiveProjectPath = await projectPath(args);
     const manager_name = getOptionalStringArg(args, "manager_name");
     const max_results = getOptionalNumberArg(args, "max_results") || 100;
